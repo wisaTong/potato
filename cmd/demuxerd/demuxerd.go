@@ -1,5 +1,10 @@
 package main
 
+import (
+	"github.com/wisatong/potato/demuxerd"
+)
+
 func main() {
-	// Start demuxerd
+	d := demuxerd.Demuxerd{}
+	d.ListenRequest()
 }
