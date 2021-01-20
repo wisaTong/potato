@@ -1,10 +1,10 @@
 package main
 
 import (
+	"html/template"
 	"log"
 	"net/http"
 	"os"
-	"text/template"
 )
 
 //Student something
@@ -14,25 +14,37 @@ type Student struct {
 	StudentID int
 }
 
+func getTemplate() *template.Template {
+	dir, _ := os.Getwd()
+	templates := template.Must(template.ParseFiles(dir+"/templates/test.html", dir+"/templates/index.html"))
+	return templates
+}
+
 //Handler something
-func handler(w http.ResponseWriter, r *http.Request) {
+func testHandler(w http.ResponseWriter, r *http.Request) {
 	student := Student{
 		Name:      "John Doe",
 		College:   "Kasetsart",
 		StudentID: 601054000,
 	}
-	dir, _ := os.Getwd()
-	t, _ := template.ParseFiles(dir + "/templates/test.html")
-	err := t.Execute(w, student)
+	err := getTemplate().ExecuteTemplate(w, "test.html", student)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 }
 
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	err := getTemplate().ExecuteTemplate(w, "index.html", "")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func main() {
 	// Start publisherd
-	http.HandleFunc("/", handler)
+	http.HandleFunc("/", testHandler)
+	http.HandleFunc("/index", indexHandler)
 	http.ListenAndServe(":8000", nil)
 
 }
