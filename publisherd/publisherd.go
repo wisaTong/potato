@@ -1,21 +1,20 @@
 package publisherd
 
-import (
-	"os"
-)
+import "io/ioutil"
 
-func GetStaticFile(filename string) (fp *os.File) {
-	dir := os.Getenv("ASSET_DIR")
-	fp, err := os.Open(dir + "/" + filename)
+// Publisherd structure
+type Publisherd struct {
+	StaticDir string
+}
+
+// GetStaticFile to get file in asset directory
+func (d *Publisherd) GetStaticFile(filename string, reply *[]byte) error {
+	data, err := ioutil.ReadFile(d.StaticDir + "/" + filename)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	defer func() {
-		if err := fp.Close(); err != nil {
-			panic(err)
-		}
-	}()
+	*reply = data
 
-	return fp
+	return nil
 }
