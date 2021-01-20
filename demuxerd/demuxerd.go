@@ -7,13 +7,18 @@ import (
 	"net/rpc"
 )
 
+// Demuxerd A demultiplexer daemon
 type Demuxerd struct {
-	ServiceUrl string
+	ServiceURL string
 }
 
-func (d *Demuxerd) ListenRequest() {
+// Start starts a demuxer daemon
+func (d *Demuxerd) Start(port uint16) {
+	address := fmt.Sprintf(":%d", port)
 	http.HandleFunc("/", d.rpcHandler)
-	http.ListenAndServe(":8080", nil)
+
+	log.Printf("demuxerd running. listening on http port%s", address)
+	http.ListenAndServe(address, nil)
 }
 
 func (d *Demuxerd) rpcHandler(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +28,7 @@ func (d *Demuxerd) rpcHandler(w http.ResponseWriter, r *http.Request) {
 
 // send some endpoint and grab static asset from publisherd
 func (d *Demuxerd) rpcClient(args string) (reply []byte) {
-	client, _ := rpc.Dial("tcp", ":12345")
+	client, _ := rpc.Dial("tcp", ":7525")
 	//Call the publisherd method
 	err := client.Call("Publisherd.GetStaticFile", args, &reply)
 	if err != nil {
