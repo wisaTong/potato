@@ -9,7 +9,7 @@ import (
 
 // Demuxerd A demultiplexer daemon
 type Demuxerd struct {
-	ServiceURL string
+	ServiceURL []string
 }
 
 // Start starts a demuxer daemon
@@ -22,21 +22,23 @@ func (d *Demuxerd) Start(port uint16) {
 }
 
 func (d *Demuxerd) rpcHandler(w http.ResponseWriter, r *http.Request) {
-	content := d.rpcClient(r.URL.Path[1:])
-	fmt.Fprint(w, BytesToString(content))
+	content, err := d.rpcClient(r.URL.Path[1:])
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("500 - Something bad happened!"))
+	}
+	fmt.Fprint(w, string(content[:]))
 }
 
 // send some endpoint and grab static asset from publisherd
-func (d *Demuxerd) rpcClient(args string) (reply []byte) {
+func (d *Demuxerd) rpcClient(args string) ([]byte, error) {
+	var reply []byte
 	client, _ := rpc.Dial("tcp", ":7525")
 	//Call the publisherd method
 	err := client.Call("Publisherd.GetStaticFile", args, &reply)
+	defer client.Close()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("%s", err)
 	}
-	return
-}
-
-func BytesToString(data []byte) string {
-	return string(data[:])
+	return reply, err
 }
