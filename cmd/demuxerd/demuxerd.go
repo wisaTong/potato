@@ -6,5 +6,5 @@ import (
 
 func main() {
 	d := demuxerd.Demuxerd{}
-	d.ListenRequest()
+	d.Start(8080)
 }
