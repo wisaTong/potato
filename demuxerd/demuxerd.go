@@ -36,7 +36,7 @@ func (d *Demuxerd) rpcClient(args string) ([]byte, error) {
 	client, _ := rpc.Dial("tcp", ":7525")
 	//Call the publisherd method
 	err := client.Call("Publisherd.GetStaticFile", args, &reply)
-	client.Close()
+	defer client.Close()
 	if err != nil {
 		log.Printf("%s", err)
 	}
