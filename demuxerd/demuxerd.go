@@ -23,7 +23,7 @@ func (d *Demuxerd) Start(port uint16) {
 
 func (d *Demuxerd) rpcHandler(w http.ResponseWriter, r *http.Request) {
 	content := d.rpcClient(r.URL.Path[1:])
-	fmt.Fprint(w, BytesToString(content))
+	fmt.Fprint(w, string(content[:]))
 }
 
 // send some endpoint and grab static asset from publisherd
