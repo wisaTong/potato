@@ -11,6 +11,7 @@ import (
 // Publisherd structure
 type Publisherd struct {
 	StaticDir string
+	Map       map[string][]byte
 }
 
 // Start starts publisher daemon listening for tcp connection on specified port
@@ -32,11 +33,18 @@ func (d Publisherd) Start(port uint16) {
 
 // GetStaticFile to get file in asset directory
 func (d *Publisherd) GetStaticFile(filename string, reply *[]byte) error {
-	data, err := ioutil.ReadFile(d.StaticDir + "/" + filename)
-	if err != nil {
-		return err
-	}
+	_, found := d.Map[filename]
+	fmt.Println(found)
+	if found {
+		*reply = d.Map[filename]
 
-	*reply = data
+	} else {
+		data, err := ioutil.ReadFile(d.StaticDir + "/" + filename)
+		if err != nil {
+			return err
+		}
+		d.Map[filename] = data
+		*reply = data
+	}
 	return nil
 }
