@@ -5,7 +5,6 @@ import (
 )
 
 func main() {
-	// Start launcherd
 	list := []string{
 		"demuxerd",
 		"publisherd",
