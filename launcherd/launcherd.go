@@ -10,14 +10,14 @@ import (
 
 // Launcherd a launcher daemon for starting webservices
 type Launcherd struct {
-	List []string
+	Services []string
 }
 
 // Start starts a launcherd
 func (d *Launcherd) Start() {
 	// [ ] prepare lib (rootfs)
 	// [ ] fork and chroot each service
-	for _, service := range d.List {
+	for _, service := range d.Services {
 		err := d.launch(service)
 		if err != nil {
 			log.Printf("Failed to start %s", service)
@@ -32,8 +32,8 @@ func (d *Launcherd) Start() {
 
 func (d *Launcherd) launch(serviceName string) error {
 	// StdOut Stdin StdErr ???
-	chrPath := fmt.Sprintf("./%schroot", serviceName)
-	err := syscall.Chroot(chrPath)
+	chrootDir := fmt.Sprintf("./%schroot", serviceName)
+	err := syscall.Chroot(chrootDir)
 	execPath := fmt.Sprintf("/%s", serviceName)
 	cmd := exec.Command(execPath)
 	if err != nil {

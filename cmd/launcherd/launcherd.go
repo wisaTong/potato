@@ -5,10 +5,10 @@ import (
 )
 
 func main() {
-	list := []string{
+	services := []string{
 		"demuxerd",
 		"publisherd",
 	}
-	d := launcherd.Launcherd{List: list}
+	d := launcherd.Launcherd{Services: services}
 	d.Start()
 }
