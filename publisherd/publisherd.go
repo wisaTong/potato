@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/rpc"
+	"os"
 )
 
 // Publisherd structure
@@ -35,7 +36,9 @@ func (d Publisherd) Start(port uint16) {
 func (d *Publisherd) GetStaticFile(filename string, reply *[]byte) error {
 	_, found := d.Map[filename]
 	fmt.Println(found)
-	if found {
+	info, _ := os.Stat(d.StaticDir + "/" + filename)
+
+	if found && int64(len(d.Map[filename])) == info.Size() {
 		*reply = d.Map[filename]
 
 	} else {
