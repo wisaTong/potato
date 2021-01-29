@@ -16,10 +16,10 @@ clean:
 	rm -rf build
 
 install: build
-	cp build/* /usr/bin
+	cp build/* /usr/local/bin
 
 uninstall:
 	@for prog in $(PROGRAMS); do \
-		rm -v /usr/bin/$$prog; \
+		rm -v /usr/local/bin/$$prog; \
 	done
 
