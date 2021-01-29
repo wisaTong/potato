@@ -7,6 +7,6 @@ import (
 )
 
 func main() {
-	d := publisherd.Publisherd{StaticDir: os.Getenv("STATIC_DIR"), Map: make(map[string]publisherd.FileDetails)}
+	d := publisherd.Publisherd{StaticDir: os.Getenv("STATIC_DIR"), StaticInfo: make(map[string]publisherd.StaticAsset)}
 	d.Start(7525)
 }

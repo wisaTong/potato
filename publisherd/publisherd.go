@@ -12,13 +12,13 @@ import (
 
 // Publisherd structure
 type Publisherd struct {
-	StaticDir string
-	Map       map[string]FileDetails
+	StaticDir  string
+	StaticInfo map[string]StaticAsset
 }
 
-//FileDetails structure
-type FileDetails struct {
-	Byte    []byte
+// StaticAsset structure
+type StaticAsset struct {
+	Data    []byte
 	ModTime time.Time
 }
 
@@ -41,22 +41,19 @@ func (d Publisherd) Start(port uint16) {
 
 // GetStaticFile to get file in asset directory
 func (d *Publisherd) GetStaticFile(filename string, reply *[]byte) error {
-	_, found := d.Map[filename]
-	fmt.Println(found)
+	file, found := d.StaticInfo[filename]
 	info, _ := os.Stat(d.StaticDir + "/" + filename)
 	modTime := info.ModTime()
 
-	if found && modTime == d.Map[filename].ModTime {
-		*reply = d.Map[filename].Byte
-
+	if found && modTime == file.ModTime {
+		*reply = file.Data
 	} else {
 		data, err := ioutil.ReadFile(d.StaticDir + "/" + filename)
 		if err != nil {
 			return err
 		}
 
-		d.Map[filename] = FileDetails{data, modTime}
-
+		d.StaticInfo[filename] = StaticAsset{data, modTime}
 		*reply = data
 	}
 	return nil
