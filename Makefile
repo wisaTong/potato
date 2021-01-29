@@ -1,3 +1,4 @@
+PROGRAMS = demuxerd publisherd launcherd
 .PHONY: clean build demuxerd publisherd launcherd
 
 build: demuxerd publisherd launcherd
@@ -13,4 +14,12 @@ launcherd:
 
 clean:
 	rm -rf build
+
+install: build
+	cp build/* /usr/bin
+
+uninstall:
+	@for prog in $(PROGRAMS); do \
+		rm -v /usr/bin/$$prog; \
+	done
 
