@@ -20,9 +20,9 @@ func (d *Launcherd) Start() {
 	for _, service := range d.Services {
 		err := d.launch(service)
 		if err != nil {
-			log.Printf("Failed to start %s", service)
+			log.Printf("Failed to start %s with error: %s", service, err)
 		} else {
-			log.Fatalf("Succesfully start %s", service)
+			log.Printf("Succesfully start %s", service)
 		}
 	}
 	// NEAR FUTURE
