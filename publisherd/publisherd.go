@@ -42,7 +42,10 @@ func (d Publisherd) Start(port uint16) {
 // GetStaticFile to get file in asset directory
 func (d *Publisherd) GetStaticFile(filename string, reply *[]byte) error {
 	file, found := d.StaticInfo[filename]
-	info, _ := os.Stat(d.StaticDir + "/" + filename)
+	info, err := os.Stat(d.StaticDir + "/" + filename)
+	if err != nil {
+		return err
+	}
 	modTime := info.ModTime()
 
 	if found && modTime == file.ModTime {
