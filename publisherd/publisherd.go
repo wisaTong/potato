@@ -12,8 +12,8 @@ import (
 
 // Publisherd structure
 type Publisherd struct {
-	StaticDir  string
-	StaticInfo map[string]StaticAsset
+	StaticDir string
+	Assets    map[string]StaticAsset
 }
 
 // StaticAsset structure
@@ -41,22 +41,23 @@ func (d Publisherd) Start(port uint16) {
 
 // GetStaticFile to get file in asset directory
 func (d *Publisherd) GetStaticFile(filename string, reply *[]byte) error {
-	file, found := d.StaticInfo[filename]
-	info, err := os.Stat(d.StaticDir + "/" + filename)
+	path := fmt.Sprintf("%s/%s", d.StaticDir, filename)
+	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
 	modTime := info.ModTime()
 
-	if found && modTime == file.ModTime {
+	file, found := d.Assets[filename]
+	if found && modTime.Equal(file.ModTime) {
 		*reply = file.Data
 	} else {
-		data, err := ioutil.ReadFile(d.StaticDir + "/" + filename)
+		data, err := ioutil.ReadFile(path)
 		if err != nil {
 			return err
 		}
 
-		d.StaticInfo[filename] = StaticAsset{data, modTime}
+		d.Assets[filename] = StaticAsset{data, modTime}
 		*reply = data
 	}
 	return nil
