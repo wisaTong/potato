@@ -1,0 +1,8 @@
+[package]
+name = "potato"
+version = "0.1.0"
+authors = ["wisatong <wisa.pow@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+nix = "0.20.0"
