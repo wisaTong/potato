@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::io;
 use std::os::unix::io::{IntoRawFd, RawFd};
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[derive(Debug)]
 pub enum Namespace {
     Cgroup,
     Ipc,
@@ -15,7 +15,7 @@ pub enum Namespace {
 }
 
 impl Namespace {
-    pub fn to_proc_ns_name(&self) -> &str {
+    pub fn to_symlink_name(&self) -> &str {
         match self {
             Namespace::Cgroup => "cgroup",
             Namespace::Ipc => "ipc",
