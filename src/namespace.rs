@@ -1,10 +1,7 @@
-use crate::error::Error;
-use nix::sched::{setns, unshare, CloneFlags};
-use std::collections::HashMap;
+use nix::sched::CloneFlags;
 use std::fs::OpenOptions;
 use std::io;
 use std::os::unix::io::{IntoRawFd, RawFd};
-use std::vec::Vec;
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Namespace {
@@ -43,8 +40,9 @@ impl Namespace {
     }
 }
 
-/// get file descriptor of specified namespace for the calling process
-pub fn get_proc_ns_fd(ns: Namespace) -> Result<RawFd, io::Error> {
+/// open /proc/self/ns/{} of a given namespace and
+/// return a file descriptor of specified namespace for the calling process
+pub fn open_proc_ns(ns: Namespace) -> Result<RawFd, io::Error> {
     let proc_ns_path = format!("/proc/self/ns/{}", ns.to_proc_ns_name());
     let fd = OpenOptions::new()
         .read(true)
@@ -53,35 +51,13 @@ pub fn get_proc_ns_fd(ns: Namespace) -> Result<RawFd, io::Error> {
     Ok(fd)
 }
 
-/// get file descriptor of specified namespace for the calling thread
-pub fn get_thread_ns_fd(ns: Namespace) -> Result<RawFd, io::Error> {
+/// open /proc/thread-self/ns/{} of a given namespace and
+/// return a file descriptor of specified namespace for the calling thread
+pub fn open_thread_ns(ns: Namespace) -> Result<RawFd, io::Error> {
     let task_ns_path = format!("/proc/thread-self/ns/{}", ns.to_proc_ns_name());
     let fd = OpenOptions::new()
         .read(true)
         .open(task_ns_path)?
         .into_raw_fd();
     Ok(fd)
-}
-
-pub fn create_nses(nses: Vec<Namespace>) -> Result<HashMap<Namespace, RawFd>, Error> {
-    let mut clone_flag = CloneFlags::empty();
-    let mut original_ns_fds = HashMap::new();
-    for ns in nses.clone() {
-        clone_flag = clone_flag | ns.to_clone_flag();
-        original_ns_fds.insert(ns, get_proc_ns_fd(ns)?);
-    }
-
-    // creating new namespaces
-    unshare(clone_flag)?;
-    let mut ns_fds = HashMap::new();
-    for ns in nses.clone() {
-        ns_fds.insert(ns, get_proc_ns_fd(ns)?);
-    }
-
-    // restoring orignal namespaces
-    for (ns, fd) in &original_ns_fds {
-        setns(*fd, ns.to_clone_flag())?;
-    }
-
-    Ok(ns_fds)
 }
