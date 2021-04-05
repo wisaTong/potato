@@ -43,7 +43,7 @@ impl Namespace {
 /// open /proc/self/ns/{} of a given namespace and
 /// return a file descriptor of specified namespace for the calling process
 pub fn open_proc_ns(ns: Namespace) -> Result<RawFd, io::Error> {
-    let proc_ns_path = format!("/proc/self/ns/{}", ns.to_proc_ns_name());
+    let proc_ns_path = format!("/proc/self/ns/{}", ns.to_symlink_name());
     let fd = OpenOptions::new()
         .read(true)
         .open(proc_ns_path)?
@@ -54,7 +54,7 @@ pub fn open_proc_ns(ns: Namespace) -> Result<RawFd, io::Error> {
 /// open /proc/thread-self/ns/{} of a given namespace and
 /// return a file descriptor of specified namespace for the calling thread
 pub fn open_thread_ns(ns: Namespace) -> Result<RawFd, io::Error> {
-    let task_ns_path = format!("/proc/thread-self/ns/{}", ns.to_proc_ns_name());
+    let task_ns_path = format!("/proc/thread-self/ns/{}", ns.to_symlink_name());
     let fd = OpenOptions::new()
         .read(true)
         .open(task_ns_path)?
