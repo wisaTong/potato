@@ -1,3 +1,4 @@
+use crate::namespace;
 use libc;
 
 extern "C" fn clone_cb<F>(data: *mut libc::c_void) -> libc::c_int
@@ -24,4 +25,15 @@ where
         flags,
         fn_ptr,
     )
+}
+
+pub fn clone_proc_newns<F>(f: F, stack: &mut [u8], namespace: &[namespace::Namespace])
+where
+    F: FnOnce() -> isize,
+{
+    let mut flags = libc::SIGCHLD;
+    for ns in namespace {
+        flags = flags | ns.to_clone_flag().bits()
+    }
+    unsafe { clone(f, stack, flags) };
 }
