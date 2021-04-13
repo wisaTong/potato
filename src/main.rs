@@ -1,9 +1,9 @@
 use nix::unistd;
 use potato::clone;
-use potato::namespace;
 use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
+use libc;
 
 struct PotatoResponse {
     status_code: String,
@@ -49,7 +49,7 @@ fn get_hostname() -> PotatoResponse {
 }
 
 fn set_and_get_hostname() -> PotatoResponse {
-    unistd::sethostname("boba");
+    unistd::sethostname("boba").unwrap();
     let status_code = "200 Ok".to_string();
     let header = "".to_string();
     let body = get_hostname_as_string();
@@ -58,10 +58,11 @@ fn set_and_get_hostname() -> PotatoResponse {
         header,
         body,
     };
+    println!("gello");
     response
 }
 
-fn write_response<'a, F>(logic: F, mut stream: &TcpStream) -> isize
+fn write_response<F>(logic: F, mut stream: &TcpStream) -> isize
 where
     F: FnOnce() -> PotatoResponse,
 {
@@ -89,7 +90,7 @@ fn handle_connection(mut stream: TcpStream) {
         clone::clone_proc_newns(
             cb,
             stack,
-            &[namespace::Namespace::Uts, namespace::Namespace::Network],
+            libc::CLONE_NEWUTS | libc::CLONE_NEWNET,
         );
     }
     if buffer.starts_with(get_ns) {
@@ -97,7 +98,7 @@ fn handle_connection(mut stream: TcpStream) {
         clone::clone_proc_newns(
             cb,
             stack,
-            &[namespace::Namespace::Uts, namespace::Namespace::Network],
+            libc::CLONE_NEWUTS | libc::CLONE_NEWNET | libc::CLONE_VM | libc::CLONE_THREAD | libc::CLONE_SIGHAND,
         );
     }
 }
