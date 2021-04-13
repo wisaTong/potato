@@ -1,4 +1,3 @@
-use crate::namespace;
 use libc;
 
 extern "C" fn clone_cb<F>(data: *mut libc::c_void) -> libc::c_int
@@ -27,13 +26,16 @@ where
     )
 }
 
-pub fn clone_proc_newns<F>(f: F, stack: &mut [u8], namespace: &[namespace::Namespace])
+pub fn clone_proc_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int)
 where
     F: FnOnce() -> isize,
 {
-    let mut flags = libc::SIGCHLD;
-    for ns in namespace {
-        flags = flags | ns.to_clone_flag().bits()
-    }
+    let mask = libc::CLONE_NEWCGROUP
+        | libc::CLONE_NEWIPC
+        | libc::CLONE_NEWNET
+        | libc::CLONE_NEWNS
+        | libc::CLONE_NEWPID
+        | libc::CLONE_NEWUSER
+        | libc::CLONE_NEWUTS;
     unsafe { clone(f, stack, flags) };
 }
