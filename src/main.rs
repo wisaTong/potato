@@ -100,15 +100,23 @@ fn handle_connection(mut stream: TcpStream) {
 
     if buffer.starts_with(get) {
         let cb = || isolate_request(stream, get_hostname, fs_prep);
-        let flags = libc::CLONE_NEWUTS | libc::CLONE_NEWNET;
+        let flags = libc::CLONE_NEWUTS
+            | libc::CLONE_NEWNET
+            | libc::CLONE_NEWUSER
+            | libc::CLONE_NEWNS
+            | libc::CLONE_NEWPID
+            | libc::CLONE_NEWIPC
+            | libc::CLONE_NEWCGROUP;
         clone::clone_proc_newns(cb, stack, flags);
     } else if buffer.starts_with(get_ns) {
         let cb = || isolate_request(stream, set_and_get_hostname, fs_prep);
         let flags = libc::CLONE_NEWUTS
             | libc::CLONE_NEWNET
-            | libc::CLONE_VM
-            | libc::CLONE_THREAD
-            | libc::CLONE_SIGHAND;
+            | libc::CLONE_NEWUSER
+            | libc::CLONE_NEWNS
+            | libc::CLONE_NEWPID
+            | libc::CLONE_NEWIPC
+            | libc::CLONE_NEWCGROUP;
         clone::clone_proc_newns(cb, stack, flags);
     }
 }
