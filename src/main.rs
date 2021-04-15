@@ -1,12 +1,11 @@
+use lazy_static::lazy_static;
 use libc;
+use nix::sys::{signal, wait};
 use nix::unistd;
 use potato::clone;
-use potato::net;
 use std::fs;
-use std::io::{self, prelude::*};
-use std::net::TcpListener;
-use std::net::TcpStream;
-use std::process::Command;
+use std::io::prelude::*;
+use std::net::{TcpListener, TcpStream};
 
 struct PotatoResponse {
     status_code: String,
@@ -23,11 +22,24 @@ impl PotatoResponse {
     }
 }
 
+extern "C" fn handl_sigchld(_: libc::c_int) {
+    wait::wait().unwrap();
+}
+
+lazy_static! {
+    static ref RUNTIME_DIR: String = {
+        let uid = unistd::getuid();
+        format!("/var/run/user/{}/potato", uid)
+    };
+}
+
 fn main() {
+    // install signal handler
+    let handler = signal::SigHandler::Handler(handl_sigchld);
+    unsafe { signal::signal(signal::SIGCHLD, handler) }.unwrap();
+
     // create potato dir for each request if not exist
-    let uid = unistd::getuid();
-    let runtime_dir = format!("/var/run/user/{}/potato", uid);
-    fs::create_dir_all(runtime_dir).expect("Faild to create runtime dir");
+    fs::create_dir_all(RUNTIME_DIR.as_str()).expect("Faild to create runtime dir");
 
     let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
     for stream in listener.incoming() {
@@ -70,34 +82,22 @@ where
     T: FnOnce(&TcpStream) -> PotatoResponse,
     F: FnOnce(), // TODO return type?
 {
-    net_prep();
     fs_prep();
+    // chroot here
+
     let response = task(&stream).to_http_response();
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
+
+    // clean up
+
     0
 }
 
 fn fs_prep() {
-    let uid = unistd::getuid();
     let pid = unistd::getpid();
-    println!("fs prep pid: {}", pid);
-    let rootfs = format!("/var/run/user/{}/potato/{}", uid, pid);
-    println!("rootfs: {}", rootfs);
-
-    // TODO handle error
-    fs::create_dir_all(rootfs.as_str()).unwrap();
-    unistd::chroot(rootfs.as_str()).unwrap();
-    unistd::chdir(".").unwrap();
-}
-
-fn net_prep() {
-    net::veth();
-    net::bridge();
-
-    let out = Command::new("bridge").arg("link").output().expect("wdf");
-    io::stdout().write_all(&out.stdout).unwrap();
-    io::stderr().write_all(&out.stderr).unwrap();
+    let rootfs = format!("{}/{}", *RUNTIME_DIR, pid);
+    fs::create_dir_all(rootfs.as_str()).unwrap(); // TODO handle error
 }
 
 fn handle_connection(mut stream: TcpStream) {
@@ -110,17 +110,20 @@ fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
+    let flags = libc::CLONE_NEWUTS
+        | libc::CLONE_NEWNET
+        | libc::CLONE_NEWUSER
+        | libc::CLONE_NEWNS
+        | libc::CLONE_NEWPID
+        | libc::CLONE_NEWIPC
+        | libc::CLONE_NEWCGROUP
+        | libc::SIGCHLD;
+
     if buffer.starts_with(get) {
         let cb = || isolate_request(stream, get_hostname, fs_prep);
-        let flags = libc::CLONE_NEWUTS | libc::CLONE_NEWNET;
         clone::clone_proc_newns(cb, stack, flags);
     } else if buffer.starts_with(get_ns) {
         let cb = || isolate_request(stream, set_and_get_hostname, fs_prep);
-        let flags = libc::CLONE_NEWUTS
-            | libc::CLONE_NEWNET
-            | libc::CLONE_VM
-            | libc::CLONE_THREAD
-            | libc::CLONE_SIGHAND;
         clone::clone_proc_newns(cb, stack, flags);
     }
 }
