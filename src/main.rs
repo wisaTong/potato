@@ -1,10 +1,12 @@
 use libc;
 use nix::unistd;
 use potato::clone;
+use potato::net;
 use std::fs;
-use std::io::prelude::*;
+use std::io::{self, prelude::*};
 use std::net::TcpListener;
 use std::net::TcpStream;
+use std::process::Command;
 
 struct PotatoResponse {
     status_code: String,
@@ -68,6 +70,7 @@ where
     T: FnOnce(&TcpStream) -> PotatoResponse,
     F: FnOnce(), // TODO return type?
 {
+    net_prep();
     fs_prep();
     let response = task(&stream).to_http_response();
     stream.write(response.as_bytes()).unwrap();
@@ -86,6 +89,19 @@ fn fs_prep() {
     fs::create_dir_all(rootfs.as_str()).unwrap();
     unistd::chroot(rootfs.as_str()).unwrap();
     unistd::chdir(".").unwrap();
+}
+
+fn net_prep() {
+    net::veth();
+    net::bridge();
+
+    let out = Command::new("ip").arg("a").output().expect("wdf");
+    io::stdout().write_all(&out.stdout).unwrap();
+    io::stderr().write_all(&out.stderr).unwrap();
+
+    // let out2 = Command::new("bridge").args(&["link","show","po-bridge-1"]).output().expect("wdf");
+    // io::stdout().write_all(&out2.stdout).unwrap();
+    // io::stderr().write_all(&out2.stderr).unwrap();
 }
 
 fn handle_connection(mut stream: TcpStream) {
