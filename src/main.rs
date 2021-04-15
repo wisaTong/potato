@@ -1,4 +1,6 @@
 use libc;
+use nix::sys::signal;
+use nix::sys::wait;
 use nix::unistd;
 use potato::clone;
 use std::fs;
@@ -21,7 +23,15 @@ impl PotatoResponse {
     }
 }
 
+extern "C" fn handl_sigchld(_: libc::c_int) {
+    wait::wait().unwrap();
+}
+
 fn main() {
+    // install signal handler
+    let handler = signal::SigHandler::Handler(handl_sigchld);
+    unsafe { signal::signal(signal::SIGCHLD, handler) }.unwrap();
+
     // create potato dir for each request if not exist
     let uid = unistd::getuid();
     let runtime_dir = format!("/var/run/user/{}/potato", uid);
@@ -78,9 +88,7 @@ where
 fn fs_prep() {
     let uid = unistd::getuid();
     let pid = unistd::getpid();
-    println!("fs prep pid: {}", pid);
     let rootfs = format!("/var/run/user/{}/potato/{}", uid, pid);
-    println!("rootfs: {}", rootfs);
 
     // TODO handle error
     fs::create_dir_all(rootfs.as_str()).unwrap();
@@ -98,17 +106,20 @@ fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
+    let flags = libc::CLONE_NEWUTS
+        | libc::CLONE_NEWNET
+        | libc::CLONE_NEWUSER
+        | libc::CLONE_NEWNS
+        | libc::CLONE_NEWPID
+        | libc::CLONE_NEWIPC
+        | libc::CLONE_NEWCGROUP
+        | libc::SIGCHLD;
+
     if buffer.starts_with(get) {
         let cb = || isolate_request(stream, get_hostname, fs_prep);
-        let flags = libc::CLONE_NEWUTS | libc::CLONE_NEWNET;
         clone::clone_proc_newns(cb, stack, flags);
     } else if buffer.starts_with(get_ns) {
         let cb = || isolate_request(stream, set_and_get_hostname, fs_prep);
-        let flags = libc::CLONE_NEWUTS
-            | libc::CLONE_NEWNET
-            | libc::CLONE_VM
-            | libc::CLONE_THREAD
-            | libc::CLONE_SIGHAND;
         clone::clone_proc_newns(cb, stack, flags);
     }
 }
