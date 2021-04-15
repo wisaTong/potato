@@ -95,13 +95,9 @@ fn net_prep() {
     net::veth();
     net::bridge();
 
-    let out = Command::new("ip").arg("a").output().expect("wdf");
+    let out = Command::new("bridge").arg("link").output().expect("wdf");
     io::stdout().write_all(&out.stdout).unwrap();
     io::stderr().write_all(&out.stderr).unwrap();
-
-    // let out2 = Command::new("bridge").args(&["link","show","po-bridge-1"]).output().expect("wdf");
-    // io::stdout().write_all(&out2.stdout).unwrap();
-    // io::stderr().write_all(&out2.stderr).unwrap();
 }
 
 fn handle_connection(mut stream: TcpStream) {

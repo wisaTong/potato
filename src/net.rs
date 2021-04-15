@@ -1,10 +1,10 @@
 use futures::stream::TryStreamExt;
 use ipnetwork::IpNetwork;
-use rtnetlink::{new_connection, sys, Error, NetworkNamespace};
+use rtnetlink::{new_connection, Error, NetworkNamespace};
 
 pub fn veth() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let links_veth = vec!["po-veth-1", "po-veth-2"];
+    let links_veth = vec!["veth1", "veth2"];
 
     //Create pair veth
     let create_veth = async {
@@ -41,8 +41,8 @@ pub fn veth() {
 
 pub fn bridge() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let links_bridge = vec!["po-bridge-1"];
-    let links_veth = vec!["po-veth-1", "po-veth-2"];
+    let links_bridge = vec!["br1"];
+    let links_veth = vec!["veth1", "veth2"];
 
     //Create
     let create_bridge = async {
@@ -76,14 +76,14 @@ pub fn bridge() {
         rt.block_on(set_bridge_up);
     }
 
-    // let set_veth_to_bridge = async {
-    //     if let Err(e) =
-    //         set_veth_to_bridge(links_veth[0].to_string(), links_bridge[0].to_string()).await
-    //     {
-    //         eprintln!("{}", e);
-    //     }
-    // };
-    // rt.block_on(set_veth_to_bridge);
+    let set_veth_to_bridge = async {
+        if let Err(e) =
+            set_veth_to_bridge(links_veth[0].to_string(), links_bridge[0].to_string()).await
+        {
+            eprintln!("{}", e);
+        }
+    };
+    rt.block_on(set_veth_to_bridge);
 }
 
 pub fn netns() {
@@ -151,27 +151,55 @@ async fn create_bridge(links_bridge: String) -> Result<(), String> {
         .map_err(|e| format!("{}", e))
 }
 
-//Not work yet
 async fn set_veth_to_bridge(link_veth: String, link_bridge: String) -> Result<(), Error> {
     let (connection, handle, _) = new_connection().unwrap();
     tokio::spawn(connection);
     let mut links_veth = handle.link().get().set_name_filter(link_veth).execute();
-    let mut links_bridge = handle.link().get().set_name_filter(link_bridge).execute();
     if let Some(link1) = links_veth.try_next().await? {
+        let mut links_bridge = handle.link().get().set_name_filter(link_bridge).execute();
         if let Some(link2) = links_bridge.try_next().await? {
             handle
                 .link()
                 .set(link1.header.index)
-                .master(link2.header.index);
+                .master(link2.header.index)
+                .execute()
+                .await?;
         }
     }
     Ok(())
 }
 
 async fn create_netns(ns_name: String) -> Result<(), String> {
-    NetworkNamespace::add(ns_name.to_string())
+    NetworkNamespace::add(ns_name)
         .await
         .map_err(|e| format!("{}", e))
+}
+
+pub fn setns(pid: u32) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let device_name = "veth1";
+    let x = async {
+        if let Err(e) = something_netns((device_name).to_string(), pid).await {
+            eprintln!("{}", e);
+        }
+    };
+
+    rt.block_on(x);
+}
+
+async fn something_netns(device_name: String, pid: u32) -> Result<(), rtnetlink::Error> {
+    let (connection, handle, _) = new_connection().unwrap();
+    tokio::spawn(connection);
+    let mut links_device = handle.link().get().set_name_filter(device_name).execute();
+    if let Some(link) = links_device.try_next().await? {
+        handle
+            .link()
+            .set(link.header.index)
+            .setns_by_pid(pid)
+            .execute()
+            .await?;
+    }
+    Ok(())
 }
 
 // pub async fn dump_addresses() -> Result<(), Error> {
