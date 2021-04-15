@@ -78,9 +78,7 @@ where
 fn fs_prep() {
     let uid = unistd::getuid();
     let pid = unistd::getpid();
-    println!("fs prep pid: {}", pid);
     let rootfs = format!("/var/run/user/{}/potato/{}", uid, pid);
-    println!("rootfs: {}", rootfs);
 
     // TODO handle error
     fs::create_dir_all(rootfs.as_str()).unwrap();
