@@ -9,6 +9,7 @@ where
     (*boxed_fn)() as libc::c_int
 }
 
+/// unsafe wrapper around libc clone
 pub unsafe fn clone<F>(f: F, stack: &mut [u8], flags: libc::c_int) -> libc::c_int
 where
     F: FnOnce() -> isize,
@@ -27,6 +28,7 @@ where
     )
 }
 
+/// create new process to do task and create new namespaces specified in flags
 pub fn clone_proc_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int) -> Result<(), Errno>
 where
     F: FnOnce() -> isize,
@@ -39,6 +41,8 @@ where
     Ok(())
 }
 
+/// create new thread to do task and create new namespaces specified in flags,
+/// silently ignore CLONE_NEWUSER and CLONE_NEWPID due to compatibility with CLONE_VM
 pub fn clone_thread_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int) -> Result<(), Errno>
 where
     F: FnOnce() -> isize,

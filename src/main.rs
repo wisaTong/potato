@@ -77,21 +77,40 @@ fn set_and_get_hostname(_: &TcpStream) -> PotatoResponse {
     }
 }
 
-fn isolate_request<T, F>(mut stream: &TcpStream, task: T, fs_prep: F) -> isize
+fn isolate_request<T, F>(mut stream: TcpStream, task: T, fs_prep: F)
 where
     T: FnOnce(&TcpStream) -> PotatoResponse,
     F: FnOnce(), // TODO return type?
 {
     fs_prep();
-    // chroot here
 
-    let response = task(&stream).to_http_response();
-    stream.write(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
+    const STACK_SIZE: usize = 1024 * 1024;
+    let ref mut stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
+
+    let cb = || {
+        // chroot here
+
+        let response = task(&stream).to_http_response();
+        stream.write(response.as_bytes()).unwrap();
+        stream.flush().unwrap();
+
+        0
+    };
+
+    let flags = libc::CLONE_NEWUSER
+        | libc::CLONE_NEWUTS
+        | libc::CLONE_NEWNET
+        | libc::CLONE_NEWNS
+        | libc::CLONE_NEWPID
+        | libc::CLONE_NEWIPC
+        | libc::CLONE_NEWCGROUP
+        | libc::SIGCHLD;
+
+    if let Err(e) = clone::clone_proc_newns(cb, stack, flags) {
+        handle_req_error(stream, e.desc());
+    };
 
     // clean up
-
-    0
 }
 
 fn fs_prep() {
@@ -114,30 +133,12 @@ fn handle_connection(mut stream: TcpStream) {
     let get = b"GET / HTTP/1.1\r\n";
     let get_ns = b"GET /ns HTTP/1.1\r\n";
 
-    const STACK_SIZE: usize = 1024 * 1024;
-    let ref mut stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
-
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
-    let flags = libc::CLONE_NEWUSER
-        | libc::CLONE_NEWUTS
-        | libc::CLONE_NEWNET
-        | libc::CLONE_NEWNS
-        | libc::CLONE_NEWPID
-        | libc::CLONE_NEWIPC
-        | libc::CLONE_NEWCGROUP
-        | libc::SIGCHLD;
-
     if buffer.starts_with(get) {
-        let cb = || isolate_request(&stream, get_hostname, fs_prep);
-        if let Err(e) = clone::clone_proc_newns(cb, stack, flags) {
-            handle_req_error(stream, e.desc());
-        };
+        isolate_request(stream, get_hostname, fs_prep);
     } else if buffer.starts_with(get_ns) {
-        let cb = || isolate_request(&stream, set_and_get_hostname, fs_prep);
-        if let Err(e) = clone::clone_proc_newns(cb, stack, flags) {
-            handle_req_error(stream, e.desc());
-        };
+        isolate_request(stream, set_and_get_hostname, fs_prep);
     }
 }
