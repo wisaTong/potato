@@ -77,7 +77,7 @@ fn set_and_get_hostname(_: &TcpStream) -> PotatoResponse {
     }
 }
 
-fn isolate_request<T, F>(mut stream: TcpStream, task: T, fs_prep: F) -> isize
+fn isolate_request<T, F>(mut stream: &TcpStream, task: T, fs_prep: F) -> isize
 where
     T: FnOnce(&TcpStream) -> PotatoResponse,
     F: FnOnce(), // TODO return type?
@@ -100,6 +100,16 @@ fn fs_prep() {
     fs::create_dir_all(rootfs.as_str()).unwrap(); // TODO handle error
 }
 
+fn handle_req_error(mut stream: TcpStream, message: &str) {
+    let header = format!("Content-Length: {}", message.len());
+    let response = format!(
+        "HTTP/1.1 500 Internal Server Error\r\n{}\r\n\r\n{}",
+        header, message
+    );
+    stream.write(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
+}
+
 fn handle_connection(mut stream: TcpStream) {
     let get = b"GET / HTTP/1.1\r\n";
     let get_ns = b"GET /ns HTTP/1.1\r\n";
@@ -110,9 +120,9 @@ fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
-    let flags = libc::CLONE_NEWUTS
+    let flags = libc::CLONE_NEWUSER
+        | libc::CLONE_NEWUTS
         | libc::CLONE_NEWNET
-        | libc::CLONE_NEWUSER
         | libc::CLONE_NEWNS
         | libc::CLONE_NEWPID
         | libc::CLONE_NEWIPC
@@ -120,10 +130,14 @@ fn handle_connection(mut stream: TcpStream) {
         | libc::SIGCHLD;
 
     if buffer.starts_with(get) {
-        let cb = || isolate_request(stream, get_hostname, fs_prep);
-        clone::clone_proc_newns(cb, stack, flags);
+        let cb = || isolate_request(&stream, get_hostname, fs_prep);
+        if let Err(e) = clone::clone_proc_newns(cb, stack, flags) {
+            handle_req_error(stream, e.desc());
+        };
     } else if buffer.starts_with(get_ns) {
-        let cb = || isolate_request(stream, set_and_get_hostname, fs_prep);
-        clone::clone_proc_newns(cb, stack, flags);
+        let cb = || isolate_request(&stream, set_and_get_hostname, fs_prep);
+        if let Err(e) = clone::clone_proc_newns(cb, stack, flags) {
+            handle_req_error(stream, e.desc());
+        };
     }
 }

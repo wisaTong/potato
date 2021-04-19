@@ -1,4 +1,5 @@
 use libc;
+use nix::errno::{errno, Errno};
 
 extern "C" fn clone_cb<F>(data: *mut libc::c_void) -> libc::c_int
 where
@@ -26,18 +27,27 @@ where
     )
 }
 
-pub fn clone_proc_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int)
+pub fn clone_proc_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int) -> Result<(), Errno>
 where
     F: FnOnce() -> isize,
 {
     // TODO decide on more appropriate mask
-    let mask = libc::CLONE_NEWCGROUP
-        | libc::CLONE_NEWIPC
-        | libc::CLONE_NEWNET
-        | libc::CLONE_NEWNS
-        | libc::CLONE_NEWPID
-        | libc::CLONE_NEWUSER
-        | libc::CLONE_NEWUTS
-        | libc::SIGCHLD;
-    unsafe { clone(f, stack, flags & mask) };
+    let mask = !(libc::CLONE_VM | libc::CLONE_THREAD);
+    if unsafe { clone(f, stack, flags & mask) } == -1 {
+        return Err(Errno::from_i32(errno()));
+    }
+    Ok(())
+}
+
+pub fn clone_thread_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int) -> Result<(), Errno>
+where
+    F: FnOnce() -> isize,
+{
+    // TODO decide on more appropriate mask
+    let mandatory = libc::CLONE_VM | libc::CLONE_THREAD | libc::CLONE_SIGHAND;
+    let mask = !(libc::CLONE_NEWUSER | libc::CLONE_NEWPID);
+    if unsafe { clone(f, stack, (flags | mandatory) & mask) } == -1 {
+        return Err(Errno::from_i32(errno()));
+    }
+    Ok(())
 }
