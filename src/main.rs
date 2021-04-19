@@ -80,21 +80,18 @@ fn set_and_get_hostname(_: &TcpStream) -> PotatoResponse {
 fn isolate_request<T, F, N>(mut stream: TcpStream, task: T, fs_prep: F, net_prep: N)
 where
     T: FnOnce(&TcpStream) -> PotatoResponse,
-    F: FnOnce(), // TODO return type?
+    F: FnOnce(unistd::Pid) -> String,
     N: FnOnce(), // TODO paramenter, return type?
 {
-    fs_prep();
-
     const STACK_SIZE: usize = 1024 * 1024;
     let ref mut stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
     let cb = || {
-        // chroot here
-
         let response = task(&stream).to_http_response();
         stream.write(response.as_bytes()).unwrap();
         stream.flush().unwrap();
 
+        // clean up
         0
     };
 
@@ -109,6 +106,14 @@ where
 
     match clone::clone_proc_newns(cb, stack, flags) {
         Ok(pid) => {
+            // FIXME should not be using child pid
+            // waitting for Book's implementation of directory numbering
+            let rootfs = fs_prep(unistd::Pid::from_raw(pid));
+
+            // FIXME try to not unwrap?
+            unistd::chroot(rootfs.as_str()).unwrap();
+            unistd::chdir(".").unwrap();
+
             net_prep(/* pid */);
             // TODO send sigcont
         }
@@ -116,14 +121,12 @@ where
             handle_req_error(stream, e.to_string().as_str());
         }
     }
-
-    // clean up
 }
 
-fn fs_prep() {
-    let pid = unistd::getpid();
-    let rootfs = format!("{}/{}", *RUNTIME_DIR, pid);
+fn fs_prep(pid: unistd::Pid) -> String {
+    let rootfs = format!("{}/{}", *RUNTIME_DIR, pid.as_raw());
     fs::create_dir_all(rootfs.as_str()).unwrap(); // TODO handle error
+    rootfs
 }
 
 fn net_prep(/* pid, link, ip */) {
