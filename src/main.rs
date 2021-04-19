@@ -77,10 +77,11 @@ fn set_and_get_hostname(_: &TcpStream) -> PotatoResponse {
     }
 }
 
-fn isolate_request<T, F>(mut stream: TcpStream, task: T, fs_prep: F)
+fn isolate_request<T, F, N>(mut stream: TcpStream, task: T, fs_prep: F, net_prep: N)
 where
     T: FnOnce(&TcpStream) -> PotatoResponse,
     F: FnOnce(), // TODO return type?
+    N: FnOnce(), // TODO paramenter, return type?
 {
     fs_prep();
 
@@ -106,9 +107,15 @@ where
         | libc::CLONE_NEWCGROUP
         | libc::SIGCHLD;
 
-    if let Err(e) = clone::clone_proc_newns(cb, stack, flags) {
-        handle_req_error(stream, e.desc());
-    };
+    match clone::clone_proc_newns(cb, stack, flags) {
+        Ok(pid) => {
+            net_prep(/* pid */);
+            // TODO send sigcont
+        }
+        Err(e) => {
+            handle_req_error(stream, e.to_string().as_str());
+        }
+    }
 
     // clean up
 }
@@ -117,6 +124,10 @@ fn fs_prep() {
     let pid = unistd::getpid();
     let rootfs = format!("{}/{}", *RUNTIME_DIR, pid);
     fs::create_dir_all(rootfs.as_str()).unwrap(); // TODO handle error
+}
+
+fn net_prep(/* pid, link, ip */) {
+    // network setup
 }
 
 fn handle_req_error(mut stream: TcpStream, message: &str) {
@@ -137,8 +148,8 @@ fn handle_connection(mut stream: TcpStream) {
     stream.read(&mut buffer).unwrap();
 
     if buffer.starts_with(get) {
-        isolate_request(stream, get_hostname, fs_prep);
+        isolate_request(stream, get_hostname, fs_prep, net_prep);
     } else if buffer.starts_with(get_ns) {
-        isolate_request(stream, set_and_get_hostname, fs_prep);
+        isolate_request(stream, set_and_get_hostname, fs_prep, net_prep);
     }
 }
