@@ -29,29 +29,33 @@ where
 }
 
 /// create new process to do task and create new namespaces specified in flags
-pub fn clone_proc_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int) -> Result<(), Errno>
+pub fn clone_proc_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int) -> Result<libc::c_int, Errno>
 where
     F: FnOnce() -> isize,
 {
     // TODO decide on more appropriate mask
     let mask = !(libc::CLONE_VM | libc::CLONE_THREAD);
-    if unsafe { clone(f, stack, flags & mask) } == -1 {
-        return Err(Errno::from_i32(errno()));
+    match unsafe { clone(f, stack, flags & mask) } {
+        -1 => Err(Errno::from_i32(errno())),
+        pid => Ok(pid),
     }
-    Ok(())
 }
 
 /// create new thread to do task and create new namespaces specified in flags,
 /// silently ignore CLONE_NEWUSER and CLONE_NEWPID due to compatibility with CLONE_VM
-pub fn clone_thread_newns<F>(f: F, stack: &mut [u8], flags: libc::c_int) -> Result<(), Errno>
+pub fn clone_thread_newns<F>(
+    f: F,
+    stack: &mut [u8],
+    flags: libc::c_int,
+) -> Result<libc::c_int, Errno>
 where
     F: FnOnce() -> isize,
 {
     // TODO decide on more appropriate mask
     let mandatory = libc::CLONE_VM | libc::CLONE_THREAD | libc::CLONE_SIGHAND;
     let mask = !(libc::CLONE_NEWUSER | libc::CLONE_NEWPID);
-    if unsafe { clone(f, stack, (flags | mandatory) & mask) } == -1 {
-        return Err(Errno::from_i32(errno()));
+    match unsafe { clone(f, stack, (flags | mandatory) & mask) } {
+        -1 => Err(Errno::from_i32(errno())),
+        pid => Ok(pid),
     }
-    Ok(())
 }
