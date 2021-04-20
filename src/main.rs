@@ -3,6 +3,7 @@ use libc;
 use nix::sys::{signal, wait};
 use nix::unistd;
 use potato::clone;
+use potato::idmap;
 use std::fs;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
@@ -106,16 +107,25 @@ where
 
     match clone::clone_proc_newns(cb, stack, flags) {
         Ok(pid) => {
-            // FIXME should not be using child pid
-            // waitting for Book's implementation of directory numbering
-            let rootfs = fs_prep(unistd::Pid::from_raw(pid));
+            // // FIXME EVERYTHING HERE BREAKS
+            // // id mapping
+            // idmap::UidMapper::new()
+            //     .add(0, 1000, 1)
+            //     .write_newuidmap(1)
+            //     .unwrap();
 
-            // FIXME try to not unwrap?
-            unistd::chroot(rootfs.as_str()).unwrap();
-            unistd::chdir(".").unwrap();
+            // // FIXME should not be using child pid
+            // // waitting for Book's implementation of directory numbering
+            // let rootfs = fs_prep(unistd::Pid::from_raw(pid));
 
-            net_prep(/* pid */);
-            // TODO send sigcont
+            // // FIXME try to not unwrap?
+            // unistd::chroot(rootfs.as_str()).unwrap();
+            // unistd::chdir(".").unwrap();
+
+            // // network setup
+            // net_prep(/* pid */);
+
+            // // TODO send sigcont
         }
         Err(e) => {
             handle_req_error(stream, e.to_string().as_str());
