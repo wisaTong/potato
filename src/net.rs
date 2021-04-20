@@ -2,81 +2,52 @@ use futures::stream::TryStreamExt;
 use ipnetwork::IpNetwork;
 use rtnetlink::{new_connection, Error, NetworkNamespace};
 
-const VETHS_NAME: [&'static str; 2] = ["poeth1", "poeth2"];
-const BRIDGE_NAME: &'static str = "bridge";
+const VETH_INSIDE_NAME: &'static str = "poeth-inside";
+const BRIDGE_NAME: &'static str = "br-potato";
 
 // Create veth pair one for set master to bridge, other for setns to clone process.
 // poeth1 always set master to bridge
 // poeth2 always move to clone process
-pub fn prep_network_stack() {
+pub fn prep_network_stack(veth_name: String, pid: u32) {
     let rt = tokio::runtime::Runtime::new().unwrap();
+    let veth_outside_name = veth_name;
 
     //Create pair veth
     let create_veth = async {
-        if let Err(e) = create_veth(VETHS_NAME[0].to_string(), VETHS_NAME[1].to_string()).await {
+        if let Err(e) =
+            create_veth(veth_outside_name.to_string(), VETH_INSIDE_NAME.to_string()).await
+        {
             eprintln!("{}", e);
         };
     };
     rt.block_on(create_veth);
 
-    //Create bridge
-    let create_bridge = async {
-        if let Err(e) = create_bridge(BRIDGE_NAME.to_string()).await {
-            eprintln!("{}", e);
-        };
-    };
-    rt.block_on(create_bridge);
-
-    let set_veth_to_bridge = async {
-        if let Err(e) = set_veth_to_bridge(VETHS_NAME[0].to_string(), BRIDGE_NAME.to_string()).await
-        {
-            eprintln!("{}", e);
-        }
-    };
-    rt.block_on(set_veth_to_bridge);
-}
-
-// set network in parent process
-// ***vip = valid ip
-
-pub fn set_outside_network(ip: String, pid: u32) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let vip: IpNetwork = ip.parse().unwrap_or_else(|_| {
-        eprint!("invalid address");
-        std::process::exit(1);
-    });
     let link_up_veth = async {
-        if let Err(e) = set_link_up(VETHS_NAME[0].to_string()).await {
+        if let Err(e) = set_link_up(veth_outside_name.to_string()).await {
             eprintln!("{}", e);
         }
     };
     rt.block_on(link_up_veth);
-    let link_up_br = async {
-        if let Err(e) = set_link_up(BRIDGE_NAME.to_string()).await {
-            eprintln!("{}", e);
-        }
-    };
-    rt.block_on(link_up_br);
+
     let set_veth_to_bridge = async {
-        if let Err(e) = set_veth_to_bridge(VETHS_NAME[0].to_string(), BRIDGE_NAME.to_string()).await
+        if let Err(e) =
+            set_veth_to_bridge(veth_outside_name.to_string(), BRIDGE_NAME.to_string()).await
         {
             eprintln!("{}", e);
         }
     };
     rt.block_on(set_veth_to_bridge);
-    let add_link_address = async {
-        if let Err(e) = add_link_address(BRIDGE_NAME.to_string(), vip).await {
-            eprintln!("{}", e);
-        }
-    };
-    rt.block_on(add_link_address);
+
     let setns_by_pid = async {
-        if let Err(e) = setns_by_pid(VETHS_NAME[1].to_string(), pid).await {
+        if let Err(e) = setns_by_pid(VETH_INSIDE_NAME.to_string(), pid).await {
             eprintln!("{}", e);
         }
     };
     rt.block_on(setns_by_pid);
 }
+
+// set network in parent process
+// ***vip = valid ip
 
 //set network in clone process
 pub fn set_inside_network(ip: String) {
@@ -86,13 +57,13 @@ pub fn set_inside_network(ip: String) {
         std::process::exit(1);
     });
     let link_up_veth = async {
-        if let Err(e) = set_link_up(VETHS_NAME[1].to_string()).await {
+        if let Err(e) = set_link_up(VETH_INSIDE_NAME.to_string()).await {
             eprintln!("{}", e);
         };
     };
     rt.block_on(link_up_veth);
     let add_link_address = async {
-        if let Err(e) = add_link_address(VETHS_NAME[1].to_string(), vip).await {
+        if let Err(e) = add_link_address(VETH_INSIDE_NAME.to_string(), vip).await {
             eprintln!("{}", e);
         }
     };
@@ -100,18 +71,18 @@ pub fn set_inside_network(ip: String) {
 }
 
 //stand alone veth pair with ip address
-pub fn prep_veth(ip: [&'static str; 2]) {
+pub fn prep_veth(veths_name: [&'static str; 2], ip: [&'static str; 2]) {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     //Create pair veth
     let create_veth = async {
-        if let Err(e) = create_veth(VETHS_NAME[0].to_string(), VETHS_NAME[1].to_string()).await {
+        if let Err(e) = create_veth(veths_name[0].to_string(), veths_name[1].to_string()).await {
             eprintln!("{}", e);
         };
     };
     rt.block_on(create_veth);
 
-    for (i, link) in VETHS_NAME.iter().enumerate() {
+    for (i, link) in veths_name.iter().enumerate() {
         let ip_veth: IpNetwork = ip[i].parse().unwrap_or_else(|_| {
             eprint!("invalid address");
             std::process::exit(1);

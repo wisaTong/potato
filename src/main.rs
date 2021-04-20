@@ -2,10 +2,12 @@ use lazy_static::lazy_static;
 use libc;
 use nix::sys::{signal, wait};
 use nix::unistd;
-use potato::{clone, idmap, net};
+use potato::{clone, idmap, net::{self, set_inside_network}};
 use std::{fs, string};
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+
+const IP_BRIDGE: &'static str = "10.0.0.0/24";
 
 struct PotatoResponse {
     status_code: String,
@@ -40,6 +42,9 @@ fn main() {
 
     // create potato dir for each request if not exist
     fs::create_dir_all(RUNTIME_DIR.as_str()).expect("Faild to create runtime dir");
+
+    //create bridge for network isolate
+    net::prep_bridge(IP_BRIDGE.to_string());
 
     let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
     for stream in listener.incoming() {
@@ -102,7 +107,8 @@ where
         | libc::CLONE_NEWPID
         | libc::CLONE_NEWIPC
         | libc::CLONE_NEWCGROUP
-        | libc::SIGCHLD;
+        | libc::SIGCHLD
+        | libc::SIGSTOP;
 
     match clone::clone_proc_newns(cb, stack, flags) {
         Ok(pid) => {
@@ -140,9 +146,10 @@ fn fs_prep(pid: unistd::Pid) -> String {
     rootfs
 }
 
-fn net_prep(ip: String, pid: u32) {
-    net::prep_network_stack();
-    net::set_outside_network(ip.to_string(), pid);
+fn net_prep(veth: String, pid: u32) {
+    net::prep_network_stack(veth, pid);
+    // // TODO set up veth inside clone
+    // net::set_inside_network(ip);
 }
 
 fn handle_req_error(mut stream: TcpStream, message: &str) {
