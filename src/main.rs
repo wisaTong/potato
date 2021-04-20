@@ -2,10 +2,13 @@ use lazy_static::lazy_static;
 use libc;
 use nix::sys::{signal, wait};
 use nix::unistd;
-use potato::{clone, idmap, net::{self, set_inside_network}};
-use std::{fs, string};
+use potato::{
+    clone, idmap,
+    net::{self, set_inside_network},
+};
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+use std::{fs, string};
 
 const IP_BRIDGE: &'static str = "10.0.0.0/24";
 
@@ -147,7 +150,7 @@ fn fs_prep(pid: unistd::Pid) -> String {
 }
 
 fn net_prep(veth: String, pid: u32) {
-    net::prep_network_stack(veth, pid);
+    net::prep_network_stack(&veth, pid);
     // // TODO set up veth inside clone
     // net::set_inside_network(ip);
 }

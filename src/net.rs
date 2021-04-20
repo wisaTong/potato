@@ -10,7 +10,7 @@ const BRIDGE_NAME: &str = "br-potato";
 pub fn prep_network_stack(veth_name: &String, pid: u32) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let veth_outside_name = veth_name;
-    let veth_inside_name = &format!("{}-in",veth_name);
+    let veth_inside_name = &format!("{}-in", veth_name);
 
     //Create pair veth
     let create_veth = async {
@@ -52,7 +52,7 @@ pub fn prep_network_stack(veth_name: &String, pid: u32) {
 //set network in clone process
 pub fn set_inside_network(veth_name: String, ip: String) {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let veth_inside_name = &format!("{}-in",veth_name);
+    let veth_inside_name = &format!("{}-in", veth_name);
     let vip: IpNetwork = ip.parse().unwrap_or_else(|_| {
         eprint!("invalid address");
         std::process::exit(1);
