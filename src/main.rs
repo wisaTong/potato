@@ -2,9 +2,8 @@ use lazy_static::lazy_static;
 use libc;
 use nix::sys::{signal, wait};
 use nix::unistd;
-use potato::clone;
-use potato::idmap;
-use std::fs;
+use potato::{clone, idmap, net};
+use std::{fs, string};
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 
@@ -82,7 +81,7 @@ fn isolate_request<T, F, N>(mut stream: TcpStream, task: T, fs_prep: F, net_prep
 where
     T: FnOnce(&TcpStream) -> PotatoResponse,
     F: FnOnce(unistd::Pid) -> String,
-    N: FnOnce(), // TODO paramenter, return type?
+    N: FnOnce(String, u32), // TODO paramenter, return type?
 {
     const STACK_SIZE: usize = 1024 * 1024;
     let ref mut stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
@@ -123,9 +122,11 @@ where
             // unistd::chdir(".").unwrap();
 
             // // network setup
-            // net_prep(/* pid */);
+            // net_prep(ip: String, pid: u32);
 
             // // TODO send sigcont
+            // // network setup inside clone
+            // net::set_inside_network(ip[1].to_string());
         }
         Err(e) => {
             handle_req_error(stream, e.to_string().as_str());
@@ -139,8 +140,9 @@ fn fs_prep(pid: unistd::Pid) -> String {
     rootfs
 }
 
-fn net_prep(/* pid, link, ip */) {
-    // network setup
+fn net_prep(ip: String, pid: u32) {
+    net::prep_network_stack();
+    net::set_outside_network(ip.to_string(), pid);
 }
 
 fn handle_req_error(mut stream: TcpStream, message: &str) {
