@@ -2,11 +2,15 @@ use lazy_static::lazy_static;
 use libc;
 use nix::sys::{signal, wait};
 use nix::unistd;
-use potato::clone;
-use potato::idmap;
-use std::fs;
+use potato::{
+    clone, idmap,
+    net::{self, set_inside_network},
+};
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+use std::{fs, string};
+
+const IP_BRIDGE: &'static str = "10.0.0.0/24";
 
 struct PotatoResponse {
     status_code: String,
@@ -41,6 +45,9 @@ fn main() {
 
     // create potato dir for each request if not exist
     fs::create_dir_all(RUNTIME_DIR.as_str()).expect("Faild to create runtime dir");
+
+    //create bridge for network isolate
+    net::prep_bridge(IP_BRIDGE.to_string());
 
     let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
     for stream in listener.incoming() {
@@ -82,7 +89,7 @@ fn isolate_request<T, F, N>(mut stream: TcpStream, task: T, fs_prep: F, net_prep
 where
     T: FnOnce(&TcpStream) -> PotatoResponse,
     F: FnOnce(unistd::Pid) -> String,
-    N: FnOnce(), // TODO paramenter, return type?
+    N: FnOnce(String, u32), // TODO paramenter, return type?
 {
     const STACK_SIZE: usize = 1024 * 1024;
     let ref mut stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
@@ -103,7 +110,8 @@ where
         | libc::CLONE_NEWPID
         | libc::CLONE_NEWIPC
         | libc::CLONE_NEWCGROUP
-        | libc::SIGCHLD;
+        | libc::SIGCHLD
+        | libc::SIGSTOP;
 
     match clone::clone_proc_newns(cb, stack, flags) {
         Ok(pid) => {
@@ -123,9 +131,11 @@ where
             // unistd::chdir(".").unwrap();
 
             // // network setup
-            // net_prep(/* pid */);
+            // net_prep(ip: String, pid: u32);
 
             // // TODO send sigcont
+            // // network setup inside clone
+            // net::set_inside_network(ip[1].to_string());
         }
         Err(e) => {
             handle_req_error(stream, e.to_string().as_str());
@@ -139,8 +149,10 @@ fn fs_prep(pid: unistd::Pid) -> String {
     rootfs
 }
 
-fn net_prep(/* pid, link, ip */) {
-    // network setup
+fn net_prep(veth: String, pid: u32) {
+    net::prep_network_stack(&veth, pid);
+    // // TODO set up veth inside clone
+    // net::set_inside_network(ip);
 }
 
 fn handle_req_error(mut stream: TcpStream, message: &str) {
