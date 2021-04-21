@@ -110,8 +110,7 @@ where
         | libc::CLONE_NEWPID
         | libc::CLONE_NEWIPC
         | libc::CLONE_NEWCGROUP
-        | libc::SIGCHLD
-        | libc::SIGSTOP;
+        | libc::SIGCHLD;
 
     match clone::clone_proc_newns(cb, stack, flags) {
         Ok(pid) => {
