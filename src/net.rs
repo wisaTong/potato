@@ -1,8 +1,8 @@
 use futures::stream::TryStreamExt;
 use ipnetwork::IpNetwork;
-use rtnetlink::{new_connection, Error, NetworkNamespace};
+use rtnetlink::{new_connection, NetworkNamespace};
 
-const BRIDGE_NAME: &str = "br-potato";
+const BRIDGE_NAME: &str = "potat0";
 
 // Create veth pair one for set master to bridge, other for setns to clone process.
 // poeth1 always set master to bridge
@@ -111,10 +111,14 @@ pub fn prep_veth(veths_name: [&'static str; 2], ip: [&'static str; 2]) {
 pub fn prep_bridge(ip: String) {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    //Create
+    //Create Bridge
     let create_bridge = async {
         if let Err(e) = create_bridge(BRIDGE_NAME.to_string()).await {
-            eprintln!("{}", e);
+            let str_e = format!("{}", e);
+            if str_e == "Received a netlink error message File exists (os error 17)" {
+            } else {
+                eprintln!("{}", str_e);
+            }
         };
     };
     rt.block_on(create_bridge);
@@ -128,7 +132,11 @@ pub fn prep_bridge(ip: String) {
     //Add Ip address to each veth
     let add_bridge_address = async {
         if let Err(e) = add_link_address(BRIDGE_NAME.to_string(), ip_veth).await {
-            eprintln!("{}", e);
+            let str_e = format!("{}", e);
+            if str_e == "Received a netlink error message File exists (os error 17)" {
+            } else {
+                eprintln!("{}", str_e);
+            }
         }
     };
     rt.block_on(add_bridge_address);
@@ -142,7 +150,7 @@ pub fn prep_bridge(ip: String) {
     rt.block_on(set_bridge_up);
 }
 
-async fn set_link_up(link: String) -> Result<(), Error> {
+async fn set_link_up(link: String) -> Result<(), rtnetlink::Error> {
     let (connection, handle, _) = new_connection().unwrap();
     tokio::spawn(connection);
     let mut links = handle.link().get().set_name_filter(link.clone()).execute();
@@ -154,7 +162,7 @@ async fn set_link_up(link: String) -> Result<(), Error> {
     Ok(())
 }
 
-async fn add_link_address(link: String, ip: IpNetwork) -> Result<(), Error> {
+async fn add_link_address(link: String, ip: IpNetwork) -> Result<(), rtnetlink::Error> {
     let (connection, handle, _) = new_connection().unwrap();
     tokio::spawn(connection);
 
@@ -169,7 +177,7 @@ async fn add_link_address(link: String, ip: IpNetwork) -> Result<(), Error> {
     Ok(())
 }
 
-async fn create_veth(links_veth1: String, links_veth2: String) -> Result<(), String> {
+async fn create_veth(links_veth1: String, links_veth2: String) -> Result<(), rtnetlink::Error> {
     let (connection, handle, _) = new_connection().unwrap();
     tokio::spawn(connection);
     handle
@@ -178,10 +186,9 @@ async fn create_veth(links_veth1: String, links_veth2: String) -> Result<(), Str
         .veth(links_veth1.into(), links_veth2.into())
         .execute()
         .await
-        .map_err(|e| format!("{}", e))
 }
 
-async fn create_bridge(links_bridge: String) -> Result<(), String> {
+async fn create_bridge(links_bridge: String) -> Result<(), rtnetlink::Error> {
     let (connection, handle, _) = new_connection().unwrap();
     tokio::spawn(connection);
     handle
@@ -190,10 +197,12 @@ async fn create_bridge(links_bridge: String) -> Result<(), String> {
         .bridge(links_bridge.into())
         .execute()
         .await
-        .map_err(|e| format!("{}", e))
 }
 
-async fn set_veth_to_bridge(link_veth: String, link_bridge: String) -> Result<(), Error> {
+async fn set_veth_to_bridge(
+    link_veth: String,
+    link_bridge: String,
+) -> Result<(), rtnetlink::Error> {
     let (connection, handle, _) = new_connection().unwrap();
     tokio::spawn(connection);
     let mut links_veth = handle.link().get().set_name_filter(link_veth).execute();
