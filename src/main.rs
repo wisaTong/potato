@@ -27,7 +27,7 @@ impl PotatoResponse {
     }
 }
 
-extern "C" fn handl_sigchld(_: libc::c_int) {
+extern "C" fn handle_sigchld(_: libc::c_int) {
     wait::wait().unwrap();
 }
 
@@ -40,7 +40,7 @@ lazy_static! {
 
 fn main() {
     // install signal handler
-    let handler = signal::SigHandler::Handler(handl_sigchld);
+    let handler = signal::SigHandler::Handler(handle_sigchld);
     unsafe { signal::signal(signal::SIGCHLD, handler) }.unwrap();
 
     // create potato dir for each request if not exist
