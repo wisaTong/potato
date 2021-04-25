@@ -84,22 +84,21 @@ impl<'a> PotatoServer<'a> {
         stream.read(buffer).unwrap();
 
         let s = str::from_utf8(buffer).expect("can't covert utf8 to str");
-        let (_, back) = s.split_at(s.find("/").unwrap());
-        let (result, _) = back.split_at(s.find("H").unwrap() - 4);
+        let (_, back) = s.split_at(s.find("/").unwrap() + 1);
+        let (result, _) = back.split_at(s.find("H").unwrap() - 5);
 
         let len = &self.handlers.len();
-        let mut count = 1 as usize;
+        let mut count: usize = 1;
 
         for (route, handler) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
-            println!("{}", count);
             if buffer.starts_with(head.as_bytes()) {
                 let req = PotatoRequest::new(route.method, route.path);
                 let pres = handler(req);
                 self.write_response(stream, pres);
                 break;
             } else if len.eq(&count) {
-                let req = PotatoRequest::new(HttpRequestMethod::GET, result);
+                let req = PotatoRequest::new(HttpRequestMethod::GET, result.trim());
                 let d_handler = self.default_handlers.unwrap();
                 let pres = d_handler(req);
                 self.write_response(stream, pres);
