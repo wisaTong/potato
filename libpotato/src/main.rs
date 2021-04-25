@@ -88,7 +88,7 @@ fn set_and_get_hostname(_: &TcpStream) -> PotatoResponse {
 fn isolate_request<T, F, N>(mut stream: TcpStream, task: T, fs_prep: F, net_prep: N)
 where
     T: FnOnce(&TcpStream) -> PotatoResponse,
-    F: FnOnce(unistd::Pid) -> String,
+    F: FnOnce() -> String,
     N: FnOnce(String, u32), // TODO paramenter, return type?
 {
     const STACK_SIZE: usize = 1024 * 1024;
@@ -135,6 +135,7 @@ where
             // // TODO send sigcont
             // // network setup inside clone
             // net::set_inside_network(ip[1].to_string());
+            println!("{}", fs_prep());
         }
         Err(e) => {
             handle_req_error(stream, e.to_string().as_str());
@@ -142,10 +143,35 @@ where
     }
 }
 
-fn fs_prep(pid: unistd::Pid) -> String {
-    let rootfs = format!("{}/{}", *RUNTIME_DIR, pid.as_raw());
-    fs::create_dir_all(rootfs.as_str()).unwrap(); // TODO handle error
-    rootfs
+fn fs_prep() -> String {
+    let mut list: Vec<usize> = fs::read_dir(&*RUNTIME_DIR)
+        .unwrap()
+        .filter(|result| result.is_ok())
+        .map(|result| result.unwrap())
+        .filter(|dir_entry| dir_entry.file_type().is_ok())
+        .filter(|dir_entry| dir_entry.file_type().unwrap().is_dir())
+        .map(|dir_entry| dir_entry.file_name())
+        .map(|file_name| file_name.into_string())
+        .filter(|result| result.is_ok())
+        .map(|string| string.unwrap().parse::<usize>())
+        .filter(|result| result.is_ok())
+        .map(|result| result.unwrap())
+        .collect();
+
+    list.sort_unstable();
+
+    let mut dir_num: usize = list.len() + 1;
+    for index in 1..=list.len() {
+        if index != list[index - 1] {
+            dir_num = index;
+            break;
+        }
+    }
+
+    let req_dir = format!("{}/{}", &*RUNTIME_DIR, dir_num);
+    fs::create_dir_all(&req_dir).unwrap();
+
+    req_dir
 }
 
 fn net_prep(veth: String, pid: u32) {
