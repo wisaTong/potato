@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+use std::str;
 
 pub type PotatoRequestHandler<'a> = fn(PotatoRequest) -> PotatoResponse<'a>;
 
@@ -18,6 +19,7 @@ pub struct PotatoServer<'a> {
     port: String,
     runtime_dir: String,
     handlers: HashMap<PotatoRoute<'a>, PotatoRequestHandler<'a>>,
+    default_handlers: Option<PotatoRequestHandler<'a>>
 }
 
 impl<'a> PotatoServer<'a> {
@@ -26,6 +28,7 @@ impl<'a> PotatoServer<'a> {
             port: port.to_string(),
             runtime_dir: runtime_dir.to_string(),
             handlers: HashMap::new(),
+            default_handlers: None ,
         }
     }
 
@@ -37,6 +40,14 @@ impl<'a> PotatoServer<'a> {
     ) -> PotatoServer<'a> {
         let route = PotatoRoute { method, path };
         self.handlers.insert(route, handler);
+        self
+    }
+
+    pub fn add_default_handler(
+        mut self,
+        handler: PotatoRequestHandler<'a>,
+    ) -> PotatoServer<'a>{
+        self.default_handlers = Some(handler);
         self
     }
 
@@ -75,15 +86,31 @@ impl<'a> PotatoServer<'a> {
         let ref mut buffer: [u8; 1024] = [0; 1024];
         stream.read(buffer).unwrap();
 
+        let s = str::from_utf8(buffer).expect("can't covert utf8 to str");
+        let (_, back) = s.split_at(s.find("/").unwrap());
+        let (result, _) = back.split_at(s.find("H").unwrap() - 4);
+
+        let len = &self.handlers.len();
+        let mut count  = 1 as usize;
+
         for (route, handler) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
+            println!("{}", count);
             if buffer.starts_with(head.as_bytes()) {
                 let req = PotatoRequest::new(route.method, route.path);
                 let pres = handler(req);
                 self.write_response(stream, pres);
                 break;
+            } else if len.eq(&count){
+                let req = PotatoRequest::new(HttpRequestMethod::GET, result);
+                let d_handler = self.default_handlers.unwrap();
+                let pres = d_handler(req);
+                self.write_response(stream, pres);
+                break;
             }
+            count += 1;
         }
+
     }
 
     fn write_response(&self, mut stream: TcpStream, response: PotatoResponse) {

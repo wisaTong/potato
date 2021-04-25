@@ -39,10 +39,10 @@ impl fmt::Display for HttpRequestMethod {
 }
 
 pub struct PotatoRequest {
-    method: HttpRequestMethod,
-    path: String,
-    headers: HashMap<String, String>,
-    body: Option<String>,
+    pub method: HttpRequestMethod,
+    pub path: String,
+    pub headers: HashMap<String, String>,
+    pub body: Option<String>,
 }
 
 impl PotatoRequest {
