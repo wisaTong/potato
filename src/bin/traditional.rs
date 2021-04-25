@@ -29,19 +29,19 @@ fn main() {
         .start();
 }
 
-fn hello<'a>(_: PotatoRequest) -> PotatoResponse<'a> {
+fn hello(_: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
     let body = "Hello World!".as_bytes();
     res.set_status("200 OK")
-        .add_body(body)
+        .add_body(body.to_owned())
         .add_header("Content-Length", &body.len().to_string())
 }
 
-fn hi<'a>(_: PotatoRequest) -> PotatoResponse<'a> {
+fn hi(_: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
     let body = "Hi World".as_bytes();
     res.set_status("200 OK")
-        .add_body(body)
+        .add_body(body.to_owned())
         .add_header("Content-Length", &body.len().to_string())
 }
 
@@ -52,7 +52,7 @@ fn check_file(file: String) -> Result<(), Box<std::error::Error>> {
     Ok(())
 }
 
-fn serve_file<'a>(req: PotatoRequest) -> PotatoResponse<'a> {
+fn serve_file(req: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
     let filename = format!("{}{}", STATIC_DIR.to_string(), req.path);
 
@@ -63,10 +63,8 @@ fn serve_file<'a>(req: PotatoRequest) -> PotatoResponse<'a> {
         let mut contents = String::new();
         // read the whole file
         file.read_to_string(&mut contents);
-
-        let x = contents.as_bytes();
-
-        res.set_status("200").add_body(x)
+        res.set_status("200")
+            .add_body(contents.as_bytes().to_owned())
     } else {
         eprintln!("{} not found", filename);
         res.set_status("500")
