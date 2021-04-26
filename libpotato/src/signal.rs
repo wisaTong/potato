@@ -41,12 +41,8 @@ fn sigset_from_slice(signals: &[signal::Signal]) -> SigSet {
     sigset
 }
 
-extern "C" fn just_exit(_: libc::c_int) {
-    unsafe { libc::exit(0) };
-}
-
 /// Install signal handler for SIGCHLD
-pub fn install_sigchld_sigign() -> Result<(), nix::Error> {
+pub fn ignore_sigchld() -> Result<(), nix::Error> {
     let handler = SigHandler::SigIgn;
     let sigact = SigAction::new(handler, SaFlags::empty(), SigSet::empty());
 
@@ -57,8 +53,8 @@ pub fn install_sigchld_sigign() -> Result<(), nix::Error> {
 }
 
 // This function is fucked up
-pub fn install_sigchld_handler_exit() -> Result<(), nix::Error> {
-    let handler = SigHandler::Handler(just_exit);
+pub fn set_sa_nocldstop() -> Result<(), nix::Error> {
+    let handler = SigHandler::SigDfl;
     let sigact = SigAction::new(handler, SaFlags::SA_NOCLDSTOP, SigSet::empty());
 
     match unsafe { sigaction(signal::SIGCHLD, &sigact) } {

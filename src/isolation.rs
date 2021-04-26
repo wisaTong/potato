@@ -1,6 +1,7 @@
 use crate::{request::PotatoRequest, server::PotatoRequestHandler};
 use libpotato::{clone, libc, nix, signal, signal_hook as sighook};
 use nix::unistd;
+use std::fs;
 use std::io::prelude::*;
 use std::net::TcpStream;
 use std::os::unix::io::AsRawFd;
@@ -19,7 +20,7 @@ pub fn isolate_req(
     stream: TcpStream,
     req: PotatoRequest,
     handler: PotatoRequestHandler,
-    rootfs: String,
+    rootfs: &str,
 ) -> Result<(), TcpStream> {
     const STACK_SIZE: usize = 1024 * 1024;
 
@@ -46,7 +47,7 @@ pub fn isolate_req(
             unsafe { libc::raise(libc::SIGSTOP) };
 
             /* whenever received SIGCONT */
-            unistd::chroot(rootfs.as_str()).unwrap();
+            unistd::chroot(rootfs).unwrap();
             unistd::chdir(".").unwrap();
 
             let pres = handler(req);
@@ -55,7 +56,7 @@ pub fn isolate_req(
             0 // exit
         };
         match clone::clone_proc_newns(worker, worker_stack, libc::SIGCHLD) {
-            Ok(pid) => proxy_signal(pid),
+            Ok(pid) => proxy_signal(pid, rootfs),
             Err(_) => {}
         };
 
@@ -77,17 +78,19 @@ pub fn isolate_req(
     }
 }
 
-fn proxy_signal(pid: i32) {
-    // reap zombie and then exit
-    signal::install_sigchld_handler_exit().expect("Failed installing SIGCHLD handler");
-
-    let sigs = [libc::SIGCONT];
+fn proxy_signal(pid: i32, rootfs: &str) {
+    signal::set_sa_nocldstop().expect("Failed installing SIGCHLD handler");
+    let sigs = [libc::SIGCONT, libc::SIGCHLD];
     let mut siginfo = sighook::iterator::Signals::new(&sigs).unwrap(); // safe unwrap
 
     // unblock after installed handler
     signal::unblock(&[nix::sys::signal::SIGCONT]);
     for sig in siginfo.forever() {
         match sig {
+            libc::SIGCHLD => {
+                fs::remove_dir_all(rootfs).unwrap();
+                unsafe { libc::exit(0) }
+            }
             libc::SIGCONT => unsafe { libc::kill(pid, sig) },
             _ => unreachable!(),
         };

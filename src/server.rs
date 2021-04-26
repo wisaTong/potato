@@ -67,7 +67,7 @@ impl PotatoServer {
             // FIXME preparing bridge in the host probably not require in code.
             // because we want to be able to run web server without root permission
             net::prep_bridge("10.0.0.0/24".to_string());
-            signal::install_sigchld_sigign().expect("Failed to install SIGCHLD handler, zombiee");
+            signal::ignore_sigchld().expect("Abort: cuz dont want zombie");
         }
 
         let startup_message = format!(
@@ -142,7 +142,7 @@ impl PotatoServer {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
                 let req = PotatoRequest::new(route.method, &route.path);
-                if let Err(strm) = isolation::isolate_req(stream, req, *handler, rootfs) {
+                if let Err(strm) = isolation::isolate_req(stream, req, *handler, &rootfs) {
                     self.handle_req_error(&strm, "Isolation failure: clone init");
                 }
                 break;
