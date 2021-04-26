@@ -66,10 +66,28 @@ fn simple_add(req: PotatoRequest) -> PotatoResponse {
         .add_body(body)
 }
 
+fn compute_hanoi(num: i32, from: i32, to: i32, via: i32) {
+    if num > 0 {
+        compute_hanoi(num - 1, from, via, to);
+        compute_hanoi(num - 1, via, to, from);
+    }
+}
+
 fn hanoi(req: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
-    res.set_status("200 Ok").add_body(req.body.unwrap())
+
+    let num_str = req.body.unwrap();
+    let num_str = str::from_utf8(&num_str).unwrap();
+    println!("{}", num_str);
+    compute_hanoi(num_str.parse::<i32>().unwrap() , 1, 2, 3);
+
+    let result = "Sucess";
+    let body = result.to_string().as_bytes().to_owned();
+    res.set_status("200 OK")
+        .add_header("Content-Length", &body.len().to_string())
+        .add_body(body)
 }
+
 
 fn check_file(file: String) -> Result<(), Box<std::error::Error>> {
     let suspend_file_name = format!("{}{}", STATIC_DIR.to_string(), file);
