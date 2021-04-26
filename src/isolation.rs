@@ -1,5 +1,6 @@
 use crate::{request::PotatoRequest, server::PotatoRequestHandler};
 use libpotato::{clone, libc, nix, signal, signal_hook as sighook};
+use nix::unistd;
 use std::io::prelude::*;
 use std::net::TcpStream;
 use std::os::unix::io::AsRawFd;
@@ -18,6 +19,7 @@ pub fn isolate_req(
     stream: TcpStream,
     req: PotatoRequest,
     handler: PotatoRequestHandler,
+    rootfs: String,
 ) -> Result<(), TcpStream> {
     const STACK_SIZE: usize = 1024 * 1024;
 
@@ -39,12 +41,14 @@ pub fn isolate_req(
     let init = move || {
         let ref mut worker_stack = [0; STACK_SIZE];
         let worker = move || {
-            // start in stopped state
+            /* start in stopped state */
             signal::unblock(&[nix::sys::signal::SIGCONT]);
             unsafe { libc::raise(libc::SIGSTOP) };
-            // chroot n chdir?
-            // wake up
-            // do work
+
+            /* whenever received SIGCONT */
+            unistd::chroot(rootfs.as_str()).unwrap();
+            unistd::chdir(".").unwrap();
+
             let pres = handler(req);
             worker_copy.write(&pres.to_http_response()).unwrap();
             worker_copy.flush().unwrap();

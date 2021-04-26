@@ -1,11 +1,12 @@
-use crate::isolation;
 use crate::request::{HttpRequestMethod, PotatoRequest};
 use crate::response::PotatoResponse;
+use crate::{isolation, prep};
 use libpotato::{net, signal};
 use std::collections::HashMap;
 use std::fs;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 pub type PotatoRequestHandler = fn(PotatoRequest) -> PotatoResponse;
@@ -84,12 +85,19 @@ impl PotatoServer {
         );
         println!("{}", startup_message);
 
+        let protected_runtime_dir = Arc::new(Mutex::new(self.runtime_dir.clone()));
+
         for stream in listener.incoming() {
             let stream = stream.unwrap();
             let server = self.clone();
+
+            let arc_runtime_dir = Arc::clone(&protected_runtime_dir);
             thread::spawn(move || {
                 if server.isolation {
-                    server.handle_connection_with_isolation(stream);
+                    let runtime_dir = arc_runtime_dir.lock().unwrap();
+                    let rootfs = prep::fs_prep(&runtime_dir);
+                    std::mem::drop(runtime_dir); // unlock mutex
+                    server.handle_connection_with_isolation(stream, rootfs);
                 } else {
                     server.handle_connection(stream);
                 }
@@ -126,7 +134,7 @@ impl PotatoServer {
         }
     }
 
-    fn handle_connection_with_isolation(&self, mut stream: TcpStream) {
+    fn handle_connection_with_isolation(&self, mut stream: TcpStream, rootfs: String) {
         let ref mut buffer: [u8; 1024] = [0; 1024];
         stream.read(buffer).unwrap();
 
@@ -134,7 +142,7 @@ impl PotatoServer {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
                 let req = PotatoRequest::new(route.method, &route.path);
-                if let Err(strm) = isolation::isolate_req(stream, req, *handler) {
+                if let Err(strm) = isolation::isolate_req(stream, req, *handler, rootfs) {
                     self.handle_req_error(&strm, "Isolation failure: clone init");
                 }
                 break;
