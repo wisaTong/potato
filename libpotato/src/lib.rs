@@ -1,5 +1,6 @@
 pub use libc;
 pub use nix;
+pub use signal_hook;
 
 pub mod clone;
 pub mod idmap;
