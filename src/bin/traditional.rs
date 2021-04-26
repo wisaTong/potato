@@ -46,9 +46,9 @@ fn hi(_: PotatoRequest) -> PotatoResponse {
         .add_header("Content-Length", &body.len().to_string())
 }
 
-fn hanoi(_: PotatoRequest) -> PotatoResponse{
+fn hanoi(req: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
-    res.set_status("200 Ok").add_body("trysome".as_bytes().to_owned())
+    res.set_status("200 Ok").add_body(req.body.unwrap())
 }
 
 fn check_file(file: String) -> Result<(), Box<std::error::Error>> {
