@@ -50,23 +50,20 @@ fn hi(_: PotatoRequest) -> PotatoResponse {
 
 fn simple_add(req: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
-    
+
     let num_str = req.body.unwrap();
-    let num_str = str::from_utf8(&num_str).unwrap().replace("'", "");
+    let num_str = str::from_utf8(&num_str).unwrap();
     let list = num_str.split(",");
 
-    println!("{}", list);
-    let result = 0;
+    let mut result = 0;
     for num in list {
-        println!("{}", num);
         result += num.parse::<i32>().unwrap();
     }
 
-
-    let body = "Hi World".as_bytes();
+    let body = result.to_string().as_bytes().to_owned();
     res.set_status("200 OK")
-        .add_body(body.to_owned())
         .add_header("Content-Length", &body.len().to_string())
+        .add_body(body)
 }
 
 fn hanoi(req: PotatoRequest) -> PotatoResponse {

@@ -91,7 +91,7 @@ impl PotatoRequest {
         let mut content_len = 0;
         for i in headers.lines() {
             if i.is_empty() {
-                continue
+                continue;
             }
             let (a, b) = i.split_at(i.find(":").unwrap());
             if a.trim().starts_with("Content-Length") {
