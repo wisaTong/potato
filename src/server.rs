@@ -19,7 +19,7 @@ pub struct PotatoServer<'a> {
     port: String,
     runtime_dir: String,
     handlers: HashMap<PotatoRoute<'a>, PotatoRequestHandler>,
-    default_handlers: Option<PotatoRequestHandler>,
+    default_handler: Option<PotatoRequestHandler>,
 }
 
 impl<'a> PotatoServer<'a> {
@@ -28,7 +28,7 @@ impl<'a> PotatoServer<'a> {
             port: port.to_string(),
             runtime_dir: runtime_dir.to_string(),
             handlers: HashMap::new(),
-            default_handlers: None,
+            default_handler: None,
         }
     }
 
@@ -44,7 +44,7 @@ impl<'a> PotatoServer<'a> {
     }
 
     pub fn add_default_handler(mut self, handler: PotatoRequestHandler) -> PotatoServer<'a> {
-        self.default_handlers = Some(handler);
+        self.default_handler = Some(handler);
         self
     }
 
@@ -99,7 +99,7 @@ impl<'a> PotatoServer<'a> {
                 break;
             } else if len.eq(&count) {
                 let req = PotatoRequest::new(HttpRequestMethod::GET, result.trim());
-                let d_handler = self.default_handlers.unwrap();
+                let d_handler = self.default_handler.unwrap();
                 let pres = d_handler(req);
                 self.write_response(stream, pres);
                 break;
