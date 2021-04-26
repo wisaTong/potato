@@ -1,4 +1,5 @@
 use nix::sys::signal::{self, SigSet};
+use nix::sys::wait;
 
 /// Block signals for calling thread
 ///
@@ -40,4 +41,23 @@ fn sigset_from_slice(signals: &[signal::Signal]) -> SigSet {
         sigset.add(*sig);
     }
     sigset
+}
+
+extern "C" fn handle_sigchld(_: libc::c_int) {
+    wait::wait().unwrap();
+}
+
+/// Install signal handler for SIGCHLD
+pub fn install_sigchld_handler() -> Result<(), nix::Error> {
+    let handler = signal::SigHandler::Handler(handle_sigchld);
+    let sigaction = signal::SigAction::new(
+        handler,
+        signal::SaFlags::SA_NOCLDSTOP,
+        signal::SigSet::empty(),
+    );
+
+    match unsafe { signal::sigaction(signal::SIGCHLD, &sigaction) } {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    }
 }
