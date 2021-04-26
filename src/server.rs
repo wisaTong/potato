@@ -7,24 +7,26 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+use std::thread;
 
 pub type PotatoRequestHandler = fn(PotatoRequest) -> PotatoResponse;
-#[derive(Eq, PartialEq, Hash)]
-pub struct PotatoRoute<'a> {
+#[derive(Eq, PartialEq, Hash, Clone)]
+pub struct PotatoRoute {
     method: HttpRequestMethod,
-    path: &'a str,
+    path: String,
 }
 
-pub struct PotatoServer<'a> {
+#[derive(Clone)]
+pub struct PotatoServer {
     port: String,
     runtime_dir: String,
-    handlers: HashMap<PotatoRoute<'a>, PotatoRequestHandler>,
+    handlers: HashMap<PotatoRoute, PotatoRequestHandler>,
     default_handler: Option<PotatoRequestHandler>,
     isolation: bool,
 }
 
-impl<'a> PotatoServer<'a> {
-    pub fn new(port: &str, runtime_dir: &str, isolation: bool) -> PotatoServer<'a> {
+impl<'a> PotatoServer {
+    pub fn new(port: &str, runtime_dir: &str, isolation: bool) -> PotatoServer {
         PotatoServer {
             port: port.to_string(),
             runtime_dir: runtime_dir.to_string(),
@@ -37,15 +39,18 @@ impl<'a> PotatoServer<'a> {
     pub fn add_handler(
         mut self,
         method: HttpRequestMethod,
-        path: &'a str,
+        path: &str,
         handler: PotatoRequestHandler,
-    ) -> PotatoServer<'a> {
-        let route = PotatoRoute { method, path };
+    ) -> PotatoServer {
+        let route = PotatoRoute {
+            method,
+            path: path.to_string(),
+        };
         self.handlers.insert(route, handler);
         self
     }
 
-    pub fn add_default_handler(mut self, handler: PotatoRequestHandler) -> PotatoServer<'a> {
+    pub fn add_default_handler(mut self, handler: PotatoRequestHandler) -> PotatoServer {
         self.default_handler = Some(handler);
         self
     }
@@ -82,11 +87,14 @@ impl<'a> PotatoServer<'a> {
 
         for stream in listener.incoming() {
             let stream = stream.unwrap();
-            if self.isolation {
-                self.handle_connection_with_isolation(stream);
-            } else {
-                self.handle_connection(stream)
-            }
+            let server = self.clone();
+            thread::spawn(move || {
+                if server.isolation {
+                    server.handle_connection_with_isolation(stream);
+                } else {
+                    server.handle_connection(stream);
+                }
+            });
         }
     }
 
@@ -104,7 +112,7 @@ impl<'a> PotatoServer<'a> {
         for (route, handler) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
-                let req = PotatoRequest::new(route.method, route.path);
+                let req = PotatoRequest::new(route.method, &route.path);
                 let pres = handler(req);
                 self.write_response(stream, pres);
                 break;
@@ -126,7 +134,7 @@ impl<'a> PotatoServer<'a> {
         for (route, handler) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
-                let req = PotatoRequest::new(route.method, route.path);
+                let req = PotatoRequest::new(route.method, &route.path);
                 self.isolate_req(stream, req, *handler);
                 break;
             }
@@ -134,78 +142,79 @@ impl<'a> PotatoServer<'a> {
     }
 
     fn isolate_req(&self, stream: TcpStream, req: PotatoRequest, handler: PotatoRequestHandler) {
+        println!("isolate");
         const STACK_SIZE: usize = 1024 * 1024;
         let ref mut child_stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
         let ref mut init_stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
-        let copy_stream = stream.try_clone().unwrap();
-        let rootfs = prep::fs_prep(&self.runtime_dir);
+        // let copy_stream = stream.try_clone().unwrap();
+        // let rootfs = prep::fs_prep(&self.runtime_dir);
 
-        let flags = libc::CLONE_NEWUSER
-            | libc::CLONE_NEWPID
-            | libc::CLONE_NEWNS
-            | libc::CLONE_NEWNET
-            | libc::CLONE_NEWCGROUP
-            | libc::CLONE_NEWUTS
-            | libc::CLONE_NEWIPC
-            | libc::SIGCHLD;
+        // let flags = libc::CLONE_NEWUSER
+        //     | libc::CLONE_NEWPID
+        //     | libc::CLONE_NEWNS
+        //     | libc::CLONE_NEWNET
+        //     | libc::CLONE_NEWCGROUP
+        //     | libc::CLONE_NEWUTS
+        //     | libc::CLONE_NEWIPC
+        //     | libc::SIGCHLD;
 
-        let cb = |s| {
-            || {
-                // start in suspended state
-                unsafe { libc::raise(libc::SIGSTOP) };
-                unistd::chroot(rootfs.as_str()).unwrap();
-                unistd::chdir(".").unwrap();
-                let res = handler(req);
-                self.write_response(s, res);
-                0
-            }
-        };
+        // // let cb = |s| {
+        // //     || {
+        // //         // start in suspended state
+        // //         unsafe { libc::raise(libc::SIGSTOP) };
+        // //         unistd::chroot(rootfs.as_str()).unwrap();
+        // //         unistd::chdir(".").unwrap();
+        // //         let res = handler(req);
+        // //         self.write_response(s, res);
+        // //         0
+        // //     }
+        // // };
 
-        let init_cb = || {
-            let copy_stream = stream.try_clone().unwrap();
-            match clone::clone_proc_newns(cb(stream), child_stack, libc::SIGCHLD) {
-                Ok(pid) => {
-                    let sigs = [libc::SIGCONT, libc::SIGCHLD];
-                    let mut siginfo = sighook::iterator::Signals::new(&sigs).unwrap();
-                    signal::unblock(&[nix::sys::signal::SIGCONT]).unwrap();
-                    for sig in siginfo.forever() {
-                        match sig {
-                            libc::SIGCONT => unsafe {
-                                libc::kill(pid, sig);
-                            },
-                            libc::SIGCHLD => {
-                                fs::remove_dir_all(&rootfs).unwrap();
-                                std::process::exit(0);
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                }
-                Err(_) => {
-                    self.handle_req_error(copy_stream, "Isolation failure: clone cb");
-                    return -1;
-                }
-            }
+        // // let init_cb = || {
+        // //     let copy_stream = stream.try_clone().unwrap();
+        // //     match clone::clone_proc_newns(cb(stream), child_stack, libc::SIGCHLD) {
+        // //         Ok(pid) => {
+        // //             let sigs = [libc::SIGCONT, libc::SIGCHLD];
+        // //             let mut siginfo = sighook::iterator::Signals::new(&sigs).unwrap();
+        // //             signal::unblock(&[nix::sys::signal::SIGCONT]).unwrap();
+        // //             for sig in siginfo.forever() {
+        // //                 match sig {
+        // //                     libc::SIGCONT => unsafe {
+        // //                         libc::kill(pid, sig);
+        // //                     },
+        // //                     libc::SIGCHLD => {
+        // //                         fs::remove_dir_all(&rootfs).unwrap();
+        // //                         std::process::exit(0);
+        // //                     }
+        // //                     _ => unreachable!(),
+        // //                 }
+        // //             }
+        // //         }
+        // //         Err(_) => {
+        // //             self.handle_req_error(copy_stream, "Isolation failure: clone cb");
+        // //             return -1;
+        // //         }
+        // //     }
 
-            0
-        };
+        //     0
+        // };
 
-        signal::block(&[nix::sys::signal::SIGCONT]).unwrap();
-        match clone::clone_proc_newns(init_cb, init_stack, flags) {
-            Ok(pid) => {
-                signal::unblock(&[nix::sys::signal::SIGCONT]).unwrap();
-                // BUNCHA SETUP
-                idmap::UidMapper::new()
-                    .add(0, unistd::getuid().as_raw(), 1)
-                    .write_newuidmap(pid)
-                    .unwrap();
+        // signal::block(&[nix::sys::signal::SIGCONT]).unwrap();
+        // match clone::clone_proc_newns(init_cb, init_stack, flags) {
+        //     Ok(pid) => {
+        //         signal::unblock(&[nix::sys::signal::SIGCONT]).unwrap();
+        //         // BUNCHA SETUP
+        //         idmap::UidMapper::new()
+        //             .add(0, unistd::getuid().as_raw(), 1)
+        //             .write_newuidmap(pid)
+        //             .unwrap();
 
-                // send SIGCONT after finished setup
-                unsafe { libc::kill(pid, libc::SIGCONT) };
-            }
-            Err(_) => self.handle_req_error(copy_stream, "Isolation failure: clone init"),
-        }
+        //         // send SIGCONT after finished setup
+        //         unsafe { libc::kill(pid, libc::SIGCONT) };
+        //     }
+        //     Err(_) => self.handle_req_error(copy_stream, "Isolation failure: clone init"),
+        // }
     }
 
     fn write_response(&self, mut stream: TcpStream, response: PotatoResponse) {
