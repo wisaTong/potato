@@ -8,6 +8,7 @@ use potato_ws::server::PotatoServer;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::str;
 
 lazy_static! {
     static ref RUNTIME_DIR: String = {
@@ -27,6 +28,7 @@ fn main() {
         .add_handler(GET, "/hello", hello)
         .add_handler(GET, "/hi", hi)
         .add_handler(POST, "/hanoi", hanoi)
+        .add_handler(POST, "/add", simple_add)
         .start();
 }
 
@@ -40,6 +42,27 @@ fn hello(_: PotatoRequest) -> PotatoResponse {
 
 fn hi(_: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
+    let body = "Hi World".as_bytes();
+    res.set_status("200 OK")
+        .add_body(body.to_owned())
+        .add_header("Content-Length", &body.len().to_string())
+}
+
+fn simple_add(req: PotatoRequest) -> PotatoResponse {
+    let res = PotatoResponse::new();
+    
+    let num_str = req.body.unwrap();
+    let num_str = str::from_utf8(&num_str).unwrap().replace("'", "");
+    let list = num_str.split(",");
+
+    println!("{}", list);
+    let result = 0;
+    for num in list {
+        println!("{}", num);
+        result += num.parse::<i32>().unwrap();
+    }
+
+
     let body = "Hi World".as_bytes();
     res.set_status("200 OK")
         .add_body(body.to_owned())
