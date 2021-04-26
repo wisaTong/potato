@@ -1,9 +1,6 @@
-use core::convert::TryFrom;
-use nix::sys::signal::{self, SigSet};
-use nix::sys::wait;
+use nix::sys::signal::{self, sigaction, SaFlags, SigAction, SigHandler, SigSet};
 
 /// Block signals for calling thread
-///
 /// Change the signal mask of the calling thread through `sigprocmask(2)`.
 /// The argument `how` is always set to `SIG_BLOCK`.
 /// The set of blocked signals is the union of the current set and the set argument.
@@ -44,39 +41,28 @@ fn sigset_from_slice(signals: &[signal::Signal]) -> SigSet {
     sigset
 }
 
-extern "C" fn handle_sigchld(_: libc::c_int) {
-    wait::wait().unwrap();
+extern "C" fn just_exit(_: libc::c_int) {
+    unsafe { libc::exit(0) };
 }
 
-extern "C" fn handle_sigchld_exit(_: libc::c_int) {
-    wait::wait().unwrap();
-    std::process::exit(0);
-}
+/// Install signal handler for SIGCHLD
+pub fn install_sigchld_sigign() -> Result<(), nix::Error> {
+    let handler = SigHandler::SigIgn;
+    let sigact = SigAction::new(handler, SaFlags::empty(), SigSet::empty());
 
-pub fn install_naive_signal_handler(
-    signal: i32,
-    handler: extern "C" fn(libc::c_int),
-    saflags: signal::SaFlags,
-) -> Result<(), nix::Error> {
-    let handler = signal::SigHandler::Handler(handler);
-    let sigaction = signal::SigAction::new(handler, saflags, signal::SigSet::empty());
-    let sig = signal::Signal::try_from(signal)?;
-
-    match unsafe { signal::sigaction(sig, &sigaction) } {
+    match unsafe { sigaction(signal::SIGCHLD, &sigact) } {
         Ok(_) => Ok(()),
         Err(e) => Err(e),
     }
 }
 
-/// Install signal handler for SIGCHLD
-pub fn install_sigchld_handler() -> Result<(), nix::Error> {
-    install_naive_signal_handler(libc::SIGCHLD, handle_sigchld, signal::SaFlags::SA_NOCLDSTOP)
-}
-
+// This function is fucked up
 pub fn install_sigchld_handler_exit() -> Result<(), nix::Error> {
-    install_naive_signal_handler(
-        libc::SIGCHLD,
-        handle_sigchld_exit,
-        signal::SaFlags::SA_NOCLDSTOP,
-    )
+    let handler = SigHandler::Handler(just_exit);
+    let sigact = SigAction::new(handler, SaFlags::SA_NOCLDSTOP, SigSet::empty());
+
+    match unsafe { sigaction(signal::SIGCHLD, &sigact) } {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    }
 }

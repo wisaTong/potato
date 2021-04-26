@@ -66,7 +66,7 @@ impl PotatoServer {
             // FIXME preparing bridge in the host probably not require in code.
             // because we want to be able to run web server without root permission
             net::prep_bridge("10.0.0.0/24".to_string());
-            signal::install_sigchld_handler().unwrap();
+            signal::install_sigchld_sigign().expect("Failed to install SIGCHLD handler, zombiee");
         }
 
         let startup_message = format!(
