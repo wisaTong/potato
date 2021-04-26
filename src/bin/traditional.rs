@@ -26,6 +26,7 @@ fn main() {
         .add_default_handler(serve_file)
         .add_handler(GET, "/hello", hello)
         .add_handler(GET, "/hi", hi)
+        .add_handler(POST, "/hanoi", hanoi)
         .start();
 }
 
@@ -43,6 +44,11 @@ fn hi(_: PotatoRequest) -> PotatoResponse {
     res.set_status("200 OK")
         .add_body(body.to_owned())
         .add_header("Content-Length", &body.len().to_string())
+}
+
+fn hanoi(_: PotatoRequest) -> PotatoResponse{
+    let res = PotatoResponse::new();
+    res.set_status("200 Ok").add_body("trysome".as_bytes().to_owned())
 }
 
 fn check_file(file: String) -> Result<(), Box<std::error::Error>> {

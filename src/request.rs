@@ -46,7 +46,7 @@ pub struct PotatoRequest {
 }
 
 impl PotatoRequest {
-    pub fn new(method: HttpRequestMethod, path: &str) -> PotatoRequest {
+    pub fn new(method: HttpRequestMethod, path: &str, body: Option<String>) -> PotatoRequest {
         PotatoRequest {
             method,
             path: path.to_string(),

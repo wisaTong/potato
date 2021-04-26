@@ -92,17 +92,28 @@ impl<'a> PotatoServer<'a> {
 
         for (route, handler) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
-            if buffer.starts_with(head.as_bytes()) {
-                let req = PotatoRequest::new(route.method, route.path);
-                let pres = handler(req);
-                self.write_response(stream, pres);
-                break;
-            } else if len.eq(&count) {
-                let req = PotatoRequest::new(HttpRequestMethod::GET, result.trim());
-                let d_handler = self.default_handler.unwrap();
-                let pres = d_handler(req);
-                self.write_response(stream, pres);
-                break;
+            if route.method == HttpRequestMethod::GET {
+                if buffer.starts_with(head.as_bytes()) {
+                    let req = PotatoRequest::new(route.method, route.path, None);
+                    let pres = handler(req);
+                    self.write_response(stream, pres);
+                    break;
+                } else if len.eq(&count) {
+                    let req = PotatoRequest::new(HttpRequestMethod::GET, result.trim(), None);
+                    let d_handler = self.default_handler.unwrap();
+                    let pres = d_handler(req);
+                    self.write_response(stream, pres);
+                    break;
+                }
+            } else if route.method == HttpRequestMethod::POST {
+                if buffer.starts_with(head.as_bytes()) {
+                    self.get_header(s, &route.path);
+                    self.get_body(s);
+                    let req = PotatoRequest::new(route.method, route.path, None);
+                    let pres = handler(req);
+                    self.write_response(stream, pres);
+                    break;
+                }
             }
             count += 1;
         }
@@ -112,5 +123,41 @@ impl<'a> PotatoServer<'a> {
         let res = response.to_http_response();
         stream.write(&res).unwrap();
         stream.flush().unwrap();
+    }
+
+    fn body_check(&self, checker: bool, line: &str) {
+        if checker {
+            println!("{}", line);
+        }
+    }
+
+    fn get_body(&self, s: &str) {
+        let mut check: bool = false;
+        for x in s.lines() {
+            if x.starts_with("-") {
+                check = true;
+            } else if x.ends_with("-") {
+                check = false;
+            }
+            self.body_check(check, x);
+        }
+    }
+
+    fn get_header(&self, s: &str, ignore: &str) {
+        let mut check: bool = true;
+        let mut tmp: HashMap<&str, &str> = HashMap::new();
+        for x in s.lines() {
+            if x.contains(ignore) {
+                continue;
+            }
+            if x.starts_with("-") {
+                check = false;
+            }
+            if check {
+                println!("{}", x);
+                let (a, b) = x.split_at(x.find(":").unwrap());
+                tmp.insert(a, b);
+            }
+        }
     }
 }
