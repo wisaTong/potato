@@ -29,6 +29,7 @@ fn main() {
         .add_handler(GET, "/hi", hi)
         .add_handler(POST, "/hanoi", hanoi)
         .add_handler(POST, "/add", simple_add)
+        .add_handler(POST, "/sort", bubble_sort)
         .start();
 }
 
@@ -87,6 +88,44 @@ fn hanoi(req: PotatoRequest) -> PotatoResponse {
         .add_header("Content-Length", &body.len().to_string())
         .add_body(body)
 }
+
+
+fn bubble_sort(req: PotatoRequest) -> PotatoResponse {
+    let res = PotatoResponse::new();
+
+    let num_str = req.body.unwrap();
+    let num_str = str::from_utf8(&num_str).unwrap();
+    let list = num_str.split(",");
+
+    let mut vec = Vec::<i32>::new();
+    for num in list {
+        vec.push(num.parse::<i32>().unwrap());
+    }
+
+    for i in 0..vec.len() {
+        for j in 0..vec.len() - 1 - i {
+            if vec[j] > vec[j+1] {
+                vec.swap(j, j+1);
+            }
+        }
+    }
+    
+
+    let mut result = String::new();
+    for k in vec {
+        result.push_str(&k.to_string());
+        result = result + " ";
+    }
+    
+    
+    let body = result.to_string().as_bytes().to_owned();
+    res.set_status("200 OK")
+        .add_header("Content-Length", &body.len().to_string())
+        .add_body(body)
+
+}
+
+
 
 
 fn check_file(file: String) -> Result<(), Box<std::error::Error>> {
