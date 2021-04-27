@@ -1,15 +1,16 @@
-use crate::prep;
 use crate::request::{HttpRequestMethod, PotatoRequest};
 use crate::response::PotatoResponse;
-use libpotato::{clone, idmap, libc, net, nix, signal, signal_hook as sighook};
-use nix::unistd;
+use crate::{isolation, prep};
+use libpotato::{net, signal};
+use std::collections::HashMap;
 use std::fs;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::{collections::HashMap, os::unix::prelude::AsRawFd};
 
 pub type PotatoRequestHandler = fn(PotatoRequest) -> PotatoResponse;
+
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub struct PotatoRoute {
     method: HttpRequestMethod,
@@ -25,7 +26,7 @@ pub struct PotatoServer {
     isolation: bool,
 }
 
-impl<'a> PotatoServer {
+impl PotatoServer {
     pub fn new(port: &str, runtime_dir: &str, isolation: bool) -> PotatoServer {
         PotatoServer {
             port: port.to_string(),
@@ -56,7 +57,7 @@ impl<'a> PotatoServer {
     }
 
     pub fn start(self) {
-        let address = format!("127.0.0.1:{}", self.port);
+        let address = format!("0.0.0.0:{}", self.port);
         let listener = TcpListener::bind(&address).unwrap();
 
         // Create runtime directory
@@ -66,11 +67,7 @@ impl<'a> PotatoServer {
             // FIXME preparing bridge in the host probably not require in code.
             // because we want to be able to run web server without root permission
             net::prep_bridge("10.0.0.0/24".to_string());
-            // Install signal handler for reaping child
-            // signal::install_sigchld_handler().expect("Failed installing SIGCHLD handler");
-            thread::spawn(|| loop {
-                nix::sys::wait::wait();
-            });
+            signal::ignore_sigchld().expect("Abort: cuz dont want zombie");
         }
 
         let startup_message = format!(
@@ -88,12 +85,19 @@ impl<'a> PotatoServer {
         );
         println!("{}", startup_message);
 
+        let protected_runtime_dir = Arc::new(Mutex::new(self.runtime_dir.clone()));
+
         for stream in listener.incoming() {
             let stream = stream.unwrap();
             let server = self.clone();
+
+            let arc_runtime_dir = Arc::clone(&protected_runtime_dir);
             thread::spawn(move || {
                 if server.isolation {
-                    server.handle_connection_with_isolation(stream);
+                    let runtime_dir = arc_runtime_dir.lock().unwrap();
+                    let rootfs = prep::fs_prep(&runtime_dir);
+                    std::mem::drop(runtime_dir); // unlock mutex
+                    server.handle_connection_with_isolation(stream, rootfs);
                 } else {
                     server.handle_connection(stream);
                 }
@@ -130,7 +134,7 @@ impl<'a> PotatoServer {
         }
     }
 
-    fn handle_connection_with_isolation(&self, mut stream: TcpStream) {
+    fn handle_connection_with_isolation(&self, mut stream: TcpStream, rootfs: String) {
         let ref mut buffer: [u8; 1024] = [0; 1024];
         stream.read(buffer).unwrap();
 
@@ -138,89 +142,11 @@ impl<'a> PotatoServer {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
                 let req = PotatoRequest::new(route.method, &route.path);
-                self.isolate_req(stream, req, *handler);
+                if let Err(strm) = isolation::isolate_req(stream, req, *handler, &rootfs) {
+                    self.handle_req_error(&strm, "Isolation failure: clone init");
+                }
                 break;
             }
-        }
-    }
-
-    fn isolate_req(&self, stream: TcpStream, req: PotatoRequest, handler: PotatoRequestHandler) {
-        let fd = stream.as_raw_fd();
-        let copy_stream = stream.try_clone().unwrap();
-        const STACK_SIZE: usize = 1024 * 1024;
-        let ref mut child_stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
-        let ref mut init_stack: [u8; STACK_SIZE] = [0; STACK_SIZE];
-
-        // FIXME
-        // let copy_stream = stream.try_clone().unwrap();
-        // let rootfs = prep::fs_prep(&self.runtime_dir);
-
-        let flags = libc::CLONE_NEWUSER
-            | libc::CLONE_NEWPID
-            | libc::CLONE_NEWNS
-            | libc::CLONE_NEWNET
-            | libc::CLONE_NEWCGROUP
-            | libc::CLONE_NEWUTS
-            | libc::CLONE_NEWIPC
-            | libc::SIGCHLD;
-
-        let cb = || {
-            // start in suspended state
-            unsafe { libc::raise(libc::SIGSTOP) };
-            // unistd::chroot(rootfs.as_str()).unwrap();
-            // unistd::chdir(".").unwrap();
-            let res = handler(req);
-            self.write_response(stream, res);
-            0
-        };
-
-        let init_cb = || {
-            match clone::clone_proc_newns(cb, child_stack, libc::SIGCHLD) {
-                Ok(pid) => {
-                    let sigs = [libc::SIGCONT, libc::SIGCHLD];
-                    let mut siginfo = sighook::iterator::Signals::new(&sigs).unwrap();
-                    signal::unblock(&[nix::sys::signal::SIGCONT]).unwrap();
-                    for sig in siginfo.forever() {
-                        match sig {
-                            libc::SIGCONT => unsafe {
-                                libc::kill(pid, sig);
-                            },
-                            libc::SIGCHLD => {
-                                // fs::remove_dir_all(&rootfs).unwrap();
-
-                                std::process::exit(0);
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                }
-                Err(_) => {
-                    self.handle_req_error(&copy_stream, "Isolation failure: clone cb");
-                    return -1;
-                }
-            }
-
-            0
-        };
-
-        signal::block(&[nix::sys::signal::SIGCONT]).unwrap();
-        match clone::clone_proc_newns(init_cb, init_stack, flags) {
-            Ok(pid) => {
-                signal::unblock(&[nix::sys::signal::SIGCONT]).unwrap();
-                // BUNCHA SETUP
-                idmap::UidMapper::new()
-                    .add(0, unistd::getuid().as_raw(), 1)
-                    .write_newuidmap(pid)
-                    .unwrap();
-
-                // send SIGCONT after finished setup
-                println!("Send SigCont: {}", pid);
-                unsafe { libc::kill(pid, libc::SIGCONT) };
-            }
-            Err(_) => self.handle_req_error(&copy_stream, "Isolation failure: clone init"),
-        }
-        unsafe {
-            libc::close(fd);
         }
     }
 
