@@ -1,6 +1,6 @@
 use crate::{request::PotatoRequest, server::PotatoRequestHandler};
 use libpotato::{clone, libc, nix, signal, signal_hook as sighook};
-use nix::mount::{mount, MsFlags};
+use nix::mount::{mount, umount, MsFlags};
 use nix::unistd;
 use std::collections::HashMap;
 use std::fs;
@@ -109,8 +109,8 @@ pub fn isolate_req(
         signal::block(&[nix::sys::signal::SIGCONT]);
         match clone::clone_proc_newns(worker, worker_stack, libc::SIGCHLD) {
             Ok(pid) => {
-                isolation_setting.mount_all();
-                proxy_signal(pid, &cleanup_fs);
+                let umnt_pnts = isolation_setting.mount_all();
+                proxy_signal(pid, &cleanup_fs, umnt_pnts);
             }
             Err(_) => {}
         };
@@ -133,7 +133,7 @@ pub fn isolate_req(
     }
 }
 
-fn proxy_signal(pid: i32, rootfs: &str) {
+fn proxy_signal(pid: i32, rootfs: &str, umount_points: Vec<String>) {
     signal::set_sa_nocldstop().expect("Failed installing SIGCHLD handler");
     let sigs = [libc::SIGUSR1, libc::SIGCHLD];
     let mut siginfo = sighook::iterator::Signals::new(&sigs).unwrap(); // safe unwrap
@@ -142,7 +142,10 @@ fn proxy_signal(pid: i32, rootfs: &str) {
     for sig in siginfo.forever() {
         match sig {
             libc::SIGCHLD => {
-                // fs::remove_dir_all(rootfs).unwrap();
+                for mnt_points in umount_points {
+                    umount(mnt_points.as_str()).unwrap();
+                }
+                fs::remove_dir_all(rootfs).unwrap();
                 unsafe { libc::exit(0) }
             }
             libc::SIGUSR1 => unsafe { libc::kill(pid, libc::SIGCONT) },
