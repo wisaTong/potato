@@ -110,7 +110,10 @@ impl PotatoServer {
 
     fn handle_connection(&self, mut stream: TcpStream) {
         let ref mut buffer: [u8; 1024] = [0; 1024];
-        stream.read(buffer).unwrap();
+        if let Ok(0) = stream.read(buffer) {
+            self.handle_req_error(&stream, "Socket closed");
+            return;
+        }
 
         let len = &self.handlers.len();
         let mut count: usize = 1;
@@ -135,7 +138,10 @@ impl PotatoServer {
 
     fn handle_connection_with_isolation(&self, mut stream: TcpStream, rootfs: String) {
         let ref mut buffer: [u8; 1024] = [0; 1024];
-        stream.read(buffer).unwrap();
+        if let Ok(0) = stream.read(buffer) {
+            self.handle_req_error(&stream, "Socket closed");
+            return;
+        }
 
         let len = &self.handlers.len();
         let mut count: usize = 1;
