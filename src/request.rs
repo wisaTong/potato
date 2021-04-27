@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use libpotato::libc::printf;
+
 #[allow(dead_code)]
 #[derive(Eq, PartialEq, Hash, Clone, Copy)]
 pub enum HttpRequestMethod {
@@ -79,6 +81,14 @@ impl PotatoRequest {
             .unwrap();
 
         let head = String::from_utf8_lossy(&raw[..index]);
+        let (raw_method, back) = head.split_at(head.find("/").unwrap());
+        let (raw_path, _) = back.split_at(back.find("H").unwrap());
+
+        let method = match HttpRequestMethod::from_str(raw_method.trim()){
+            std::option::Option::Some(method) => {method}
+            std::option::Option::None => {HttpRequestMethod::OPTIONS}
+        };
+        let path = raw_path.trim();
 
         let bindex = raw
             .windows(4)
@@ -100,6 +110,6 @@ impl PotatoRequest {
         }
         let body = raw[bindex + 4..content_len + bindex + 4].to_vec();
 
-        PotatoRequest::new(HttpRequestMethod::OPTIONS, &headers, Some(body))
+        PotatoRequest::new(method, path, Some(body))
     }
 }

@@ -86,10 +86,6 @@ impl<'a> PotatoServer<'a> {
         let ref mut buffer: [u8; 1024] = [0; 1024];
         stream.read(buffer).unwrap();
 
-        let s = str::from_utf8(buffer).expect("can't covert utf8 to str");
-        let (_, back) = s.split_at(s.find("/").unwrap() + 1);
-        let (result, _) = back.split_at(s.find("H").unwrap() - 5);
-
         let len = &self.handlers.len();
         let mut count: usize = 1;
 
