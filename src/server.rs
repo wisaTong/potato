@@ -3,63 +3,75 @@ use crate::request::{
     PotatoRequest,
 };
 use crate::response::PotatoResponse;
-use libpotato::signal;
+use crate::{isolation, prep};
+use libpotato::{net, signal};
 use std::collections::HashMap;
 use std::fs;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
-use std::str;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 pub type PotatoRequestHandler = fn(PotatoRequest) -> PotatoResponse;
 
-#[derive(Eq, PartialEq, Hash)]
-pub struct PotatoRoute<'a> {
+#[derive(Eq, PartialEq, Hash, Clone)]
+pub struct PotatoRoute {
     method: HttpRequestMethod,
-    path: &'a str,
+    path: String,
 }
 
-pub struct PotatoServer<'a> {
+#[derive(Clone)]
+pub struct PotatoServer {
     port: String,
     runtime_dir: String,
-    handlers: HashMap<PotatoRoute<'a>, PotatoRequestHandler>,
+    handlers: HashMap<PotatoRoute, PotatoRequestHandler>,
     default_handler: Option<PotatoRequestHandler>,
+    isolation: bool,
 }
 
-impl<'a> PotatoServer<'a> {
-    pub fn new(port: &str, runtime_dir: &str) -> PotatoServer<'a> {
+impl PotatoServer {
+    pub fn new(port: &str, runtime_dir: &str, isolation: bool) -> PotatoServer {
         PotatoServer {
             port: port.to_string(),
             runtime_dir: runtime_dir.to_string(),
             handlers: HashMap::new(),
             default_handler: None,
+            isolation,
         }
     }
 
     pub fn add_handler(
         mut self,
         method: HttpRequestMethod,
-        path: &'a str,
+        path: &str,
         handler: PotatoRequestHandler,
-    ) -> PotatoServer<'a> {
-        let route = PotatoRoute { method, path };
+    ) -> PotatoServer {
+        let route = PotatoRoute {
+            method,
+            path: path.to_string(),
+        };
         self.handlers.insert(route, handler);
         self
     }
 
-    pub fn add_default_handler(mut self, handler: PotatoRequestHandler) -> PotatoServer<'a> {
+    pub fn add_default_handler(mut self, handler: PotatoRequestHandler) -> PotatoServer {
         self.default_handler = Some(handler);
         self
     }
 
     pub fn start(self) {
-        let address = format!("127.0.0.1:{}", self.port);
+        let address = format!("0.0.0.0:{}", self.port);
         let listener = TcpListener::bind(&address).unwrap();
 
         // Create runtime directory
         fs::create_dir_all(&self.runtime_dir).expect("Failed to initialized runtime directoy");
 
-        // Install signal handler for reaping child
-        signal::install_sigchld_handler().expect("Failed installing SIGCHLD handler");
+        if self.isolation {
+            // FIXME preparing bridge in the host probably not require in code.
+            // because we want to be able to run web server without root permission
+            net::prep_bridge("10.0.0.0/24".to_string());
+            signal::ignore_sigchld().expect("Abort: cuz dont want zombie");
+        }
 
         let startup_message = format!(
             "\n        ▒▒▒▒▒▒▒▒▓▓                                                                           \
@@ -76,9 +88,23 @@ impl<'a> PotatoServer<'a> {
         );
         println!("{}", startup_message);
 
+        let protected_runtime_dir = Arc::new(Mutex::new(self.runtime_dir.clone()));
+
         for stream in listener.incoming() {
             let stream = stream.unwrap();
-            self.handle_connection(stream);
+            let server = self.clone();
+
+            let arc_runtime_dir = Arc::clone(&protected_runtime_dir);
+            thread::spawn(move || {
+                if server.isolation {
+                    let runtime_dir = arc_runtime_dir.lock().unwrap();
+                    let rootfs = prep::fs_prep(&runtime_dir);
+                    std::mem::drop(runtime_dir); // unlock mutex
+                    server.handle_connection_with_isolation(stream, rootfs);
+                } else {
+                    server.handle_connection(stream);
+                }
+            });
         }
     }
 
@@ -107,6 +133,22 @@ impl<'a> PotatoServer<'a> {
         }
     }
 
+    fn handle_connection_with_isolation(&self, mut stream: TcpStream, rootfs: String) {
+        let ref mut buffer: [u8; 1024] = [0; 1024];
+        stream.read(buffer).unwrap();
+
+        for (route, handler) in &self.handlers {
+            let head = format!("{} {} HTTP/1.1", route.method, route.path);
+            if buffer.starts_with(head.as_bytes()) {
+                let req = PotatoRequest::new(route.method, &route.path, None);
+                if let Err(strm) = isolation::isolate_req(stream, req, *handler, &rootfs) {
+                    self.handle_req_error(&strm, "Isolation failure: clone init");
+                }
+                break;
+            }
+        }
+    }
+
     fn write_response(&self, mut stream: TcpStream, response: PotatoResponse) {
         let res = response.to_http_response();
         stream.write(&res).unwrap();
@@ -132,5 +174,15 @@ impl<'a> PotatoServer<'a> {
             }
         }
         header
+    }
+
+    fn handle_req_error(&self, mut stream: &TcpStream, message: &str) {
+        let header = format!("Content-Length: {}", message.len());
+        let response = format!(
+            "HTTP/1.1 500 Internal Server Error\r\n{}\r\n\r\n{}",
+            header, message
+        );
+        stream.write(response.as_bytes()).unwrap();
+        stream.flush().unwrap();
     }
 }

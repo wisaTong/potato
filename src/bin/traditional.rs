@@ -22,7 +22,7 @@ lazy_static! {
 }
 
 fn main() {
-    let potato_server = PotatoServer::new("8000", &RUNTIME_DIR);
+    let potato_server = PotatoServer::new("8000", &RUNTIME_DIR, false);
     potato_server
         .add_default_handler(serve_file)
         .add_handler(GET, "/hello", hello)
