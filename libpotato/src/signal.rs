@@ -62,3 +62,19 @@ pub fn set_sa_nocldstop() -> Result<(), nix::Error> {
         Err(e) => Err(e),
     }
 }
+
+extern "C" fn empty(_: libc::c_int) {}
+
+pub fn default_sigcont() -> Result<(), nix::Error> {
+    let handler = SigHandler::Handler(empty);
+    let sigact = SigAction::new(handler, SaFlags::empty(), SigSet::empty());
+
+    match unsafe { sigaction(signal::SIGCONT, &sigact) } {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn sigsuspend() {
+    unsafe { libc::sigsuspend(SigSet::empty().as_ref()) };
+}

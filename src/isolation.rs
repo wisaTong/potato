@@ -17,7 +17,7 @@ use std::os::unix::io::AsRawFd;
 ///
 /// On failure return the ownership of TcpStream for furthur error handling
 pub fn isolate_req(
-    stream: TcpStream,
+    mut stream: TcpStream,
     req: PotatoRequest,
     handler: PotatoRequestHandler,
     rootfs: &str,
@@ -25,9 +25,8 @@ pub fn isolate_req(
     const STACK_SIZE: usize = 1024 * 1024;
 
     // important: hold a fd value to close dangle connection
-    // and give worker a copy of the stream
     let fd = stream.as_raw_fd();
-    let mut worker_copy = stream.try_clone().unwrap();
+    let parent_copy = stream.try_clone().unwrap();
 
     let flags = libc::CLONE_NEWUSER
         | libc::CLONE_NEWPID
@@ -43,18 +42,19 @@ pub fn isolate_req(
         let ref mut worker_stack = [0; STACK_SIZE];
         let worker = move || {
             /* start in stopped state */
-            signal::unblock(&[nix::sys::signal::SIGCONT]);
-            unsafe { libc::raise(libc::SIGSTOP) };
+            signal::default_sigcont().unwrap();
+            signal::sigsuspend();
 
             /* whenever received SIGCONT */
             unistd::chroot(rootfs).unwrap();
             unistd::chdir(".").unwrap();
 
             let pres = handler(req);
-            worker_copy.write(&pres.to_http_response()).unwrap();
-            worker_copy.flush().unwrap();
+            stream.write(&pres.to_http_response()).unwrap();
+            stream.flush().unwrap();
             0 // exit
         };
+        signal::block(&[nix::sys::signal::SIGCONT]);
         match clone::clone_proc_newns(worker, worker_stack, libc::SIGCHLD) {
             Ok(pid) => proxy_signal(pid, rootfs),
             Err(_) => {}
@@ -64,34 +64,33 @@ pub fn isolate_req(
     };
 
     // mask SIGCONT of calling thread
-    signal::block(&[nix::sys::signal::SIGCONT]);
+    signal::block(&[nix::sys::signal::SIGUSR1]);
     match clone::clone_proc_newns(init, init_stack, flags) {
         Ok(pid) => {
             /* TODO: do stuff with pid (fs_prep?, idmap, gidmap, net) */
 
             /* Fnished set up send SIGCONT */
-            unsafe { libc::kill(pid, libc::SIGCONT) };
+            unsafe { libc::kill(pid, libc::SIGUSR1) };
             unsafe { libc::close(fd) }; // close dangle connection
             Ok(())
         }
-        Err(_) => Err(stream),
+        Err(_) => Err(parent_copy),
     }
 }
 
 fn proxy_signal(pid: i32, rootfs: &str) {
     signal::set_sa_nocldstop().expect("Failed installing SIGCHLD handler");
-    let sigs = [libc::SIGCONT, libc::SIGCHLD];
+    let sigs = [libc::SIGUSR1, libc::SIGCHLD];
     let mut siginfo = sighook::iterator::Signals::new(&sigs).unwrap(); // safe unwrap
 
-    // unblock after installed handler
-    signal::unblock(&[nix::sys::signal::SIGCONT]);
+    signal::unblock(&[nix::sys::signal::SIGUSR1]);
     for sig in siginfo.forever() {
         match sig {
             libc::SIGCHLD => {
                 fs::remove_dir_all(rootfs).unwrap();
                 unsafe { libc::exit(0) }
             }
-            libc::SIGCONT => unsafe { libc::kill(pid, sig) },
+            libc::SIGUSR1 => unsafe { libc::kill(pid, libc::SIGCONT) },
             _ => unreachable!(),
         };
     }
