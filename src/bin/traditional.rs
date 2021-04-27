@@ -8,6 +8,7 @@ use potato_ws::server::PotatoServer;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::str;
 
 lazy_static! {
     static ref RUNTIME_DIR: String = {
@@ -26,6 +27,9 @@ fn main() {
         .add_default_handler(serve_file)
         .add_handler(GET, "/hello", hello)
         .add_handler(GET, "/hi", hi)
+        .add_handler(POST, "/hanoi", hanoi)
+        .add_handler(POST, "/add", simple_add)
+        .add_handler(POST, "/sort", bubble_sort)
         .start();
 }
 
@@ -43,6 +47,92 @@ fn hi(_: PotatoRequest) -> PotatoResponse {
     res.set_status("200 OK")
         .add_body(body.to_owned())
         .add_header("Content-Length", &body.len().to_string())
+}
+
+fn simple_add(req: PotatoRequest) -> PotatoResponse {
+    let res = PotatoResponse::new();
+
+    match req.body {
+        Some(body) => {
+            let num_str = body;
+            let num_str = String::from_utf8_lossy(&num_str);
+            let list = num_str.split(",");
+
+            let mut result = 0;
+            for num in list {
+                result += num.parse::<i32>().unwrap();
+            }
+
+            let body = result.to_string().as_bytes().to_owned();
+            res.set_status("200 OK")
+                .add_header("Content-Length", &body.len().to_string())
+                .add_body(body)
+        }
+        None => res.set_status("400 Bad Request"),
+    }
+}
+
+fn compute_hanoi(num: i32, from: i32, to: i32, via: i32) {
+    if num > 0 {
+        compute_hanoi(num - 1, from, via, to);
+        compute_hanoi(num - 1, via, to, from);
+    }
+}
+
+fn hanoi(req: PotatoRequest) -> PotatoResponse {
+    let res = PotatoResponse::new();
+
+    match req.body {
+        Some(body) => {
+            let num_str = body;
+            let num_str = String::from_utf8_lossy(&num_str);
+            compute_hanoi(num_str.parse::<i32>().unwrap(), 1, 2, 3);
+
+            let result = "Success";
+            let body = result.to_string().as_bytes().to_owned();
+            res.set_status("200 OK")
+                .add_header("Content-Length", &body.len().to_string())
+                .add_body(body)
+        }
+        None => res.set_status("400 Bad Request"),
+    }
+}
+
+fn bubble_sort(req: PotatoRequest) -> PotatoResponse {
+    let res = PotatoResponse::new();
+
+    match req.body {
+        Some(body) => {
+            let num_str = body;
+            let num_str = String::from_utf8_lossy(&num_str);
+            let list = num_str.split(",");
+
+            let mut vec = Vec::<i32>::new();
+            for num in list {
+                vec.push(num.parse::<i32>().unwrap());
+            }
+
+            for i in 0..vec.len() {
+                for j in 0..vec.len() - 1 - i {
+                    if vec[j] > vec[j + 1] {
+                        vec.swap(j, j + 1);
+                    }
+                }
+            }
+
+            let mut result = String::new();
+            for k in vec {
+                result.push_str(&k.to_string());
+                result = result + " ";
+            }
+
+            let body = result.to_string().as_bytes().to_owned();
+            res.set_status("200 OK")
+                .add_header("Content-Length", &body.len().to_string())
+                .add_body(body)
+        }
+        None => res.set_status("400 Bad Request"),
+    }
 }
 
 fn check_file(file: String) -> Result<(), Box<std::error::Error>> {

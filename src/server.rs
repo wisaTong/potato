@@ -1,4 +1,7 @@
-use crate::request::{HttpRequestMethod, PotatoRequest};
+use crate::request::{
+    HttpRequestMethod::{self, *},
+    PotatoRequest,
+};
 use crate::response::PotatoResponse;
 use crate::{isolation, prep};
 use libpotato::{net, signal};
@@ -109,22 +112,18 @@ impl PotatoServer {
         let ref mut buffer: [u8; 1024] = [0; 1024];
         stream.read(buffer).unwrap();
 
-        let s = std::str::from_utf8(buffer).expect("can't covert utf8 to str");
-        let (_, back) = s.split_at(s.find("/").unwrap() + 1);
-        let (result, _) = back.split_at(s.find("H").unwrap() - 5);
-
         let len = &self.handlers.len();
         let mut count: usize = 1;
+
+        let req = PotatoRequest::from_raw_req(buffer);
 
         for (route, handler) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
-                let req = PotatoRequest::new(route.method, &route.path);
                 let pres = handler(req);
                 self.write_response(stream, pres);
                 break;
             } else if len.eq(&count) {
-                let req = PotatoRequest::new(HttpRequestMethod::GET, result.trim());
                 let d_handler = self.default_handler.unwrap();
                 let pres = d_handler(req);
                 self.write_response(stream, pres);
@@ -141,7 +140,7 @@ impl PotatoServer {
         for (route, handler) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
-                let req = PotatoRequest::new(route.method, &route.path);
+                let req = PotatoRequest::new(route.method, &route.path, None);
                 if let Err(strm) = isolation::isolate_req(stream, req, *handler, &rootfs) {
                     self.handle_req_error(&strm, "Isolation failure: clone init");
                 }
@@ -154,6 +153,27 @@ impl PotatoServer {
         let res = response.to_http_response();
         stream.write(&res).unwrap();
         stream.flush().unwrap();
+    }
+
+    pub fn get_header(&self, s: &str, ignore: &str) -> HashMap<String, String> {
+        let mut check: bool = true;
+        let mut header: HashMap<String, String> = HashMap::new();
+        for x in s.lines() {
+            if x.contains(ignore) {
+                continue;
+            }
+            if x.starts_with("-") {
+                check = false;
+            }
+            if check {
+                if x.is_empty() {
+                    break;
+                }
+                let (a, b) = x.split_at(x.find(":").unwrap());
+                header.insert(a.to_string(), b.to_string());
+            }
+        }
+        header
     }
 
     fn handle_req_error(&self, mut stream: &TcpStream, message: &str) {
