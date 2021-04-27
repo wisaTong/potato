@@ -1,9 +1,9 @@
-use crate::request::{
-    HttpRequestMethod::{self, *},
-    PotatoRequest,
-};
+use crate::request::{HttpRequestMethod, PotatoRequest};
 use crate::response::PotatoResponse;
-use crate::{isolation, prep};
+use crate::{
+    isolation::{isolate_req, IsolationSetting},
+    prep,
+};
 use libpotato::{net, signal};
 use std::collections::HashMap;
 use std::fs;
@@ -24,8 +24,8 @@ pub struct PotatoRoute {
 pub struct PotatoServer {
     port: String,
     runtime_dir: String,
-    handlers: HashMap<PotatoRoute, PotatoRequestHandler>,
-    default_handler: Option<PotatoRequestHandler>,
+    handlers: Vec<(PotatoRoute, PotatoRequestHandler, Option<IsolationSetting>)>,
+    default_handler: Option<(PotatoRequestHandler, Option<IsolationSetting>)>,
     isolation: bool,
 }
 
@@ -34,28 +34,46 @@ impl PotatoServer {
         PotatoServer {
             port: port.to_string(),
             runtime_dir: runtime_dir.to_string(),
-            handlers: HashMap::new(),
+            handlers: Vec::new(),
             default_handler: None,
             isolation,
         }
     }
 
     pub fn add_handler(
+        self,
+        method: HttpRequestMethod,
+        path: &str,
+        handler: PotatoRequestHandler,
+    ) -> PotatoServer {
+        self.add_handler_with_isolation(method, path, handler, None)
+    }
+
+    pub fn add_handler_with_isolation(
         mut self,
         method: HttpRequestMethod,
         path: &str,
         handler: PotatoRequestHandler,
+        opt_isolation: Option<IsolationSetting>,
     ) -> PotatoServer {
         let route = PotatoRoute {
             method,
             path: path.to_string(),
         };
-        self.handlers.insert(route, handler);
+        self.handlers.push((route, handler, opt_isolation));
         self
     }
 
-    pub fn add_default_handler(mut self, handler: PotatoRequestHandler) -> PotatoServer {
-        self.default_handler = Some(handler);
+    pub fn add_default_handler(self, handler: PotatoRequestHandler) -> PotatoServer {
+        self.add_default_handler_with_isolation(handler, None)
+    }
+
+    pub fn add_default_handler_with_isolation(
+        mut self,
+        handler: PotatoRequestHandler,
+        opt_isolation: Option<IsolationSetting>,
+    ) -> PotatoServer {
+        self.default_handler = Some((handler, opt_isolation));
         self
     }
 
@@ -91,9 +109,8 @@ impl PotatoServer {
         let protected_runtime_dir = Arc::new(Mutex::new(self.runtime_dir.clone()));
 
         for stream in listener.incoming() {
-            let stream = stream.unwrap();
             let server = self.clone();
-
+            let stream = stream.unwrap();
             let arc_runtime_dir = Arc::clone(&protected_runtime_dir);
             thread::spawn(move || {
                 if server.isolation {
@@ -109,22 +126,25 @@ impl PotatoServer {
     }
 
     fn handle_connection(&self, mut stream: TcpStream) {
-        let ref mut buffer: [u8; 1024] = [0; 1024];
-        stream.read(buffer).unwrap();
+        let ref mut buffer = [0; 1024];
+        if let Ok(0) = stream.read(buffer) {
+            self.handle_req_error(&stream, "Socket closed");
+            return;
+        }
 
         let len = &self.handlers.len();
         let mut count: usize = 1;
 
         let req = PotatoRequest::from_raw_req(buffer);
 
-        for (route, handler) in &self.handlers {
+        for (route, handler, _) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
                 let pres = handler(req);
                 self.write_response(stream, pres);
                 break;
             } else if len.eq(&count) {
-                let d_handler = self.default_handler.unwrap();
+                let (d_handler, _) = self.default_handler.clone().unwrap();
                 let pres = d_handler(req);
                 self.write_response(stream, pres);
                 break;
@@ -134,25 +154,32 @@ impl PotatoServer {
     }
 
     fn handle_connection_with_isolation(&self, mut stream: TcpStream, rootfs: String) {
-        let ref mut buffer: [u8; 1024] = [0; 1024];
-        stream.read(buffer).unwrap();
+        let ref mut buffer = [0; 1024];
+        if let Ok(0) = stream.read(buffer) {
+            self.handle_req_error(&stream, "Socket closed");
+            return;
+        }
 
         let len = &self.handlers.len();
         let mut count: usize = 1;
 
         let req = PotatoRequest::from_raw_req(buffer);
-
-        for (route, handler) in &self.handlers {
+        for (route, handler, opt_isolation) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
+
             if buffer.starts_with(head.as_bytes()) {
-                let req = PotatoRequest::from_raw_req(buffer);
-                if let Err(strm) = isolation::isolate_req(stream, req, *handler, &rootfs) {
+                let mut isolation_setting = opt_isolation.clone().unwrap(); // safe unwrap
+                isolation_setting.rootfs_path = rootfs;
+
+                if let Err(strm) = isolate_req(stream, req, *handler, isolation_setting) {
                     self.handle_req_error(&strm, "Isolation failure: clone init");
                 }
                 break;
             } else if len.eq(&count) {
-                let d_handler = self.default_handler.unwrap();
-                if let Err(strm) = isolation::isolate_req(stream, req, d_handler, &rootfs) {
+                let (d_handler, opt_isolation) = self.default_handler.clone().unwrap();
+                let mut isolation_setting = opt_isolation.clone().unwrap(); // safe unwrap
+                isolation_setting.rootfs_path = rootfs;
+                if let Err(strm) = isolate_req(stream, req, d_handler, isolation_setting) {
                     self.handle_req_error(&strm, "Isolation failure: clone init");
                 }
                 break;
