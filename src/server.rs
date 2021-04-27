@@ -137,15 +137,27 @@ impl PotatoServer {
         let ref mut buffer: [u8; 1024] = [0; 1024];
         stream.read(buffer).unwrap();
 
+        let len = &self.handlers.len();
+        let mut count: usize = 1;
+
+        let req = PotatoRequest::from_raw_req(buffer);
+
         for (route, handler) in &self.handlers {
             let head = format!("{} {} HTTP/1.1", route.method, route.path);
             if buffer.starts_with(head.as_bytes()) {
-                let req = PotatoRequest::new(route.method, &route.path, None);
+                let req = PotatoRequest::from_raw_req(buffer);
                 if let Err(strm) = isolation::isolate_req(stream, req, *handler, &rootfs) {
                     self.handle_req_error(&strm, "Isolation failure: clone init");
                 }
                 break;
+            } else if len.eq(&count) {
+                let d_handler = self.default_handler.unwrap();
+                if let Err(strm) = isolation::isolate_req(stream, req, d_handler, &rootfs) {
+                    self.handle_req_error(&strm, "Isolation failure: clone init");
+                }
+                break;
             }
+            count += 1;
         }
     }
 

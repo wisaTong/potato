@@ -47,7 +47,7 @@ pub fn isolate_req(
 
             /* whenever received SIGCONT */
             unistd::chroot(rootfs).unwrap();
-            unistd::chdir(".").unwrap();
+            unistd::chdir(rootfs).unwrap();
 
             let pres = handler(req);
             stream.write(&pres.to_http_response()).unwrap();

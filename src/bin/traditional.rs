@@ -8,7 +8,6 @@ use potato_ws::server::PotatoServer;
 use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::str;
 
 lazy_static! {
     static ref RUNTIME_DIR: String = {
