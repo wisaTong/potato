@@ -1,10 +1,60 @@
 use crate::{request::PotatoRequest, server::PotatoRequestHandler};
 use libpotato::{clone, libc, nix, signal, signal_hook as sighook};
+use nix::mount::{mount, MsFlags};
 use nix::unistd;
+use std::collections::HashMap;
 use std::fs;
 use std::io::prelude::*;
 use std::net::TcpStream;
 use std::os::unix::io::AsRawFd;
+use std::path::Path;
+
+#[derive(Clone)]
+pub struct IsolationSetting {
+    pub rootfs_path: String,
+    pub mount_points: HashMap<String, String>,
+}
+
+impl IsolationSetting {
+    pub fn new() -> IsolationSetting {
+        IsolationSetting {
+            rootfs_path: "".to_string(),
+            mount_points: HashMap::new(),
+        }
+    }
+
+    pub fn add_bind_mount_point(mut self, src: &str, target: &str) -> IsolationSetting {
+        assert!(
+            Path::new(src).exists(),
+            format!("[{}] bind mount source not exist", src)
+        );
+        self.mount_points
+            .insert(src.to_string(), target.to_string());
+        self
+    }
+
+    /// Bind mounts all `src` to `target` in `mount_points`.
+    /// This will silenly refuse to mount if src is not a path to a directory
+    pub fn mount_all(self) -> Vec<String> {
+        let mut mounted = Vec::new();
+        for (src, target) in self.mount_points {
+            let mnt_target = format!("{}/{}", self.rootfs_path, target);
+            if Path::new(&src).is_dir() {
+                fs::create_dir_all(&mnt_target).unwrap();
+                if let Ok(_) = mount(
+                    Some(src.as_str()),
+                    mnt_target.as_str(),
+                    None::<&str>,
+                    MsFlags::MS_BIND,
+                    None::<&str>,
+                ) {
+                    mounted.push(mnt_target)
+                }
+            }
+        }
+        mounted
+    }
+}
 
 /// NOTE: becareful of what you handler do.
 /// Your handler will be execute in new process in different namespaces
@@ -20,8 +70,10 @@ pub fn isolate_req(
     mut stream: TcpStream,
     req: PotatoRequest,
     handler: PotatoRequestHandler,
-    rootfs: &str,
+    isolation_setting: IsolationSetting,
 ) -> Result<(), TcpStream> {
+    let chrootfs = isolation_setting.rootfs_path.clone();
+    let cleanup_fs = isolation_setting.rootfs_path.clone();
     const STACK_SIZE: usize = 1024 * 1024;
 
     // important: hold a fd value to close dangle connection
@@ -46,7 +98,7 @@ pub fn isolate_req(
             signal::sigsuspend();
 
             /* whenever received SIGCONT */
-            unistd::chroot(rootfs).unwrap();
+            unistd::chroot(chrootfs.as_str()).unwrap();
             unistd::chdir("/").unwrap();
 
             let pres = handler(req);
@@ -56,7 +108,10 @@ pub fn isolate_req(
         };
         signal::block(&[nix::sys::signal::SIGCONT]);
         match clone::clone_proc_newns(worker, worker_stack, libc::SIGCHLD) {
-            Ok(pid) => proxy_signal(pid, rootfs),
+            Ok(pid) => {
+                isolation_setting.mount_all();
+                proxy_signal(pid, &cleanup_fs);
+            }
             Err(_) => {}
         };
 
@@ -87,7 +142,7 @@ fn proxy_signal(pid: i32, rootfs: &str) {
     for sig in siginfo.forever() {
         match sig {
             libc::SIGCHLD => {
-                fs::remove_dir_all(rootfs).unwrap();
+                // fs::remove_dir_all(rootfs).unwrap();
                 unsafe { libc::exit(0) }
             }
             libc::SIGUSR1 => unsafe { libc::kill(pid, libc::SIGCONT) },

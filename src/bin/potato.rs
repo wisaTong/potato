@@ -2,6 +2,7 @@ use lazy_static::lazy_static;
 use libpotato::nix;
 use nix::unistd;
 
+use potato_ws::isolation::IsolationSetting;
 use potato_ws::request::{HttpRequestMethod::*, PotatoRequest};
 use potato_ws::response::PotatoResponse;
 use potato_ws::server::PotatoServer;
@@ -9,6 +10,7 @@ use potato_ws::server::PotatoServer;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 
 lazy_static! {
     static ref RUNTIME_DIR: String = {
@@ -22,9 +24,11 @@ lazy_static! {
 }
 
 fn main() {
+    let isolation = IsolationSetting::new().add_bind_mount_point(&STATIC_DIR, "resources");
+
     let potato_server = PotatoServer::new("8000", &RUNTIME_DIR, true);
     potato_server
-        .add_default_handler(serve_file)
+        .add_default_handler_with_isolation(serve_file, Some(isolation))
         .add_handler(GET, "/hello", hello)
         .add_handler(GET, "/hi", hi)
         .add_handler(POST, "/hanoi", hanoi)
@@ -135,28 +139,22 @@ fn bubble_sort(req: PotatoRequest) -> PotatoResponse {
     }
 }
 
-fn check_file(file: String) -> Result<(), Box<std::error::Error>> {
-    let suspend_file_name = format!("{}{}", STATIC_DIR.to_string(), file);
-    let _suspend_file = File::open(suspend_file_name)?;
-
-    Ok(())
-}
-
 fn serve_file(req: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
-    let filename = format!("{}{}", STATIC_DIR.to_string(), req.path);
+    let filename = format!("/resources/{}", req.path);
 
-    let checker = check_file(req.path);
     let mut file: File;
-    if checker.is_ok() {
+    if Path::new(&filename).exists() {
         file = File::open(filename).unwrap();
         let mut contents = String::new();
         // read the whole file
-        file.read_to_string(&mut contents);
-        res.set_status("200")
-            .add_body(contents.as_bytes().to_owned())
+        match file.read_to_string(&mut contents) {
+            Ok(_) => res
+                .set_status("200")
+                .add_body(contents.as_bytes().to_owned()),
+            Err(_) => res.set_status("500 Internal Server Error"),
+        }
     } else {
-        eprintln!("{} not found", filename);
-        res.set_status("500")
+        res.set_status("404 Not Found")
     }
 }
