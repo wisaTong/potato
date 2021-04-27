@@ -117,15 +117,9 @@ impl<'a> PotatoServer<'a> {
         stream.flush().unwrap();
     }
 
-    fn body_check(&self, checker: bool, line: &str) {
-        if checker {
-            println!("{}", line);
-        }
-    }
-
     pub fn get_header(&self, s: &str, ignore: &str) -> HashMap<String, String> {
         let mut check: bool = true;
-        let mut tmp: HashMap<String, String> = HashMap::new();
+        let mut header: HashMap<String, String> = HashMap::new();
         for x in s.lines() {
             if x.contains(ignore) {
                 continue;
@@ -137,11 +131,10 @@ impl<'a> PotatoServer<'a> {
                 if x.is_empty() {
                     break;
                 }
-                println!("{}", x);
                 let (a, b) = x.split_at(x.find(":").unwrap());
-                tmp.insert(a.to_string(), b.to_string());
+                header.insert(a.to_string(), b.to_string());
             }
         }
-        tmp
+        header
     }
 }

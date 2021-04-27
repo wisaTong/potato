@@ -100,6 +100,6 @@ impl PotatoRequest {
         }
         let body = raw[bindex + 4..content_len + bindex + 4].to_vec();
 
-        PotatoRequest::new(HttpRequestMethod::GET, &headers, Some(body))
+        PotatoRequest::new(HttpRequestMethod::OPTIONS, &headers, Some(body))
     }
 }

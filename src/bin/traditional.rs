@@ -52,19 +52,24 @@ fn hi(_: PotatoRequest) -> PotatoResponse {
 fn simple_add(req: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
 
-    let num_str = req.body.unwrap();
-    let num_str = str::from_utf8(&num_str).unwrap();
-    let list = num_str.split(",");
+    match req.body {
+        Some(body) => {
+            let num_str = body;
+            let num_str = String::from_utf8_lossy(&num_str);
+            let list = num_str.split(",");
 
-    let mut result = 0;
-    for num in list {
-        result += num.parse::<i32>().unwrap();
+            let mut result = 0;
+            for num in list {
+                result += num.parse::<i32>().unwrap();
+            }
+
+            let body = result.to_string().as_bytes().to_owned();
+            res.set_status("200 OK")
+                .add_header("Content-Length", &body.len().to_string())
+                .add_body(body)
+        }
+        None => res.set_status("400 Bad Request"),
     }
-
-    let body = result.to_string().as_bytes().to_owned();
-    res.set_status("200 OK")
-        .add_header("Content-Length", &body.len().to_string())
-        .add_body(body)
 }
 
 fn compute_hanoi(num: i32, from: i32, to: i32, via: i32) {
@@ -77,56 +82,58 @@ fn compute_hanoi(num: i32, from: i32, to: i32, via: i32) {
 fn hanoi(req: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
 
-    let num_str = req.body.unwrap();
-    let num_str = str::from_utf8(&num_str).unwrap();
-    println!("{}", num_str);
-    compute_hanoi(num_str.parse::<i32>().unwrap() , 1, 2, 3);
+    match req.body {
+        Some(body) => {
+            let num_str = body;
+            let num_str = String::from_utf8_lossy(&num_str);
+            compute_hanoi(num_str.parse::<i32>().unwrap(), 1, 2, 3);
 
-    let result = "Sucess";
-    let body = result.to_string().as_bytes().to_owned();
-    res.set_status("200 OK")
-        .add_header("Content-Length", &body.len().to_string())
-        .add_body(body)
+            let result = "Success";
+            let body = result.to_string().as_bytes().to_owned();
+            res.set_status("200 OK")
+                .add_header("Content-Length", &body.len().to_string())
+                .add_body(body)
+        }
+        None => res.set_status("400 Bad Request"),
+    }
 }
-
 
 fn bubble_sort(req: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
 
-    let num_str = req.body.unwrap();
-    let num_str = str::from_utf8(&num_str).unwrap();
-    let list = num_str.split(",");
+    match req.body {
+        Some(body) => {
+            let num_str = body;
+            let num_str = String::from_utf8_lossy(&num_str);
+            let list = num_str.split(",");
 
-    let mut vec = Vec::<i32>::new();
-    for num in list {
-        vec.push(num.parse::<i32>().unwrap());
-    }
-
-    for i in 0..vec.len() {
-        for j in 0..vec.len() - 1 - i {
-            if vec[j] > vec[j+1] {
-                vec.swap(j, j+1);
+            let mut vec = Vec::<i32>::new();
+            for num in list {
+                vec.push(num.parse::<i32>().unwrap());
             }
+
+            for i in 0..vec.len() {
+                for j in 0..vec.len() - 1 - i {
+                    if vec[j] > vec[j + 1] {
+                        vec.swap(j, j + 1);
+                    }
+                }
+            }
+
+            let mut result = String::new();
+            for k in vec {
+                result.push_str(&k.to_string());
+                result = result + " ";
+            }
+
+            let body = result.to_string().as_bytes().to_owned();
+            res.set_status("200 OK")
+                .add_header("Content-Length", &body.len().to_string())
+                .add_body(body)
         }
+        None => res.set_status("400 Bad Request"),
     }
-    
-
-    let mut result = String::new();
-    for k in vec {
-        result.push_str(&k.to_string());
-        result = result + " ";
-    }
-    
-    
-    let body = result.to_string().as_bytes().to_owned();
-    res.set_status("200 OK")
-        .add_header("Content-Length", &body.len().to_string())
-        .add_body(body)
-
 }
-
-
-
 
 fn check_file(file: String) -> Result<(), Box<std::error::Error>> {
     let suspend_file_name = format!("{}{}", STATIC_DIR.to_string(), file);
