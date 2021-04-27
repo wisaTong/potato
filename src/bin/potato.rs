@@ -29,28 +29,24 @@ fn main() {
     let potato_server = PotatoServer::new("8000", &RUNTIME_DIR, true);
     potato_server
         .add_default_handler_with_isolation(serve_file, Some(isolation))
-        .add_handler(GET, "/hello", hello)
-        .add_handler(GET, "/hi", hi)
-        .add_handler(POST, "/hanoi", hanoi)
-        .add_handler(POST, "/add", simple_add)
-        .add_handler(POST, "/sort", bubble_sort)
+        .add_handler_with_isolation(GET, "/hello", hello, Some(IsolationSetting::new()))
+        .add_handler_with_isolation(GET, "/hi", hi, Some(IsolationSetting::new()))
+        .add_handler_with_isolation(POST, "/hanoi", hanoi, Some(IsolationSetting::new()))
+        .add_handler_with_isolation(POST, "/add", simple_add, Some(IsolationSetting::new()))
+        .add_handler_with_isolation(POST, "/sort", bubble_sort, Some(IsolationSetting::new()))
         .start()
 }
 
 fn hello(_: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
     let body = "Hello World!".as_bytes();
-    res.set_status("200 OK")
-        .add_body(body.to_owned())
-        .add_header("Content-Length", &body.len().to_string())
+    res.set_status("200 OK").add_body(body.to_owned())
 }
 
 fn hi(_: PotatoRequest) -> PotatoResponse {
     let res = PotatoResponse::new();
     let body = "Hi World".as_bytes();
-    res.set_status("200 OK")
-        .add_body(body.to_owned())
-        .add_header("Content-Length", &body.len().to_string())
+    res.set_status("200 OK").add_body(body.to_owned())
 }
 
 fn simple_add(req: PotatoRequest) -> PotatoResponse {
@@ -68,9 +64,7 @@ fn simple_add(req: PotatoRequest) -> PotatoResponse {
             }
 
             let body = result.to_string().as_bytes().to_owned();
-            res.set_status("200 OK")
-                .add_header("Content-Length", &body.len().to_string())
-                .add_body(body)
+            res.set_status("200 OK").add_body(body)
         }
         None => res.set_status("400 Bad Request"),
     }
@@ -94,9 +88,7 @@ fn hanoi(req: PotatoRequest) -> PotatoResponse {
 
             let result = "Success";
             let body = result.to_string().as_bytes().to_owned();
-            res.set_status("200 OK")
-                .add_header("Content-Length", &body.len().to_string())
-                .add_body(body)
+            res.set_status("200 OK").add_body(body)
         }
         None => res.set_status("400 Bad Request"),
     }
@@ -131,9 +123,7 @@ fn bubble_sort(req: PotatoRequest) -> PotatoResponse {
             }
 
             let body = result.to_string().as_bytes().to_owned();
-            res.set_status("200 OK")
-                .add_header("Content-Length", &body.len().to_string())
-                .add_body(body)
+            res.set_status("200 OK").add_body(body)
         }
         None => res.set_status("400 Bad Request"),
     }
@@ -150,7 +140,7 @@ fn serve_file(req: PotatoRequest) -> PotatoResponse {
         // read the whole file
         match file.read_to_string(&mut contents) {
             Ok(_) => res
-                .set_status("200")
+                .set_status("200 OK")
                 .add_body(contents.as_bytes().to_owned()),
             Err(_) => res.set_status("500 Internal Server Error"),
         }
